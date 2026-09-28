@@ -1,0 +1,281 @@
+import { createClient } from '@supabase/supabase-js';
+import { Expense, Budget, SavingsGoal, Subscription, Bill, SharedGroup, Challenge, UserProfile } from '../types';
+import {
+  initialUserProfile,
+  initialExpenses,
+  initialBudgets,
+  initialSubscriptions,
+  initialBills,
+  initialSavingsGoals,
+  initialSharedGroup,
+  initialChallenges
+} from '../data/seedData';
+
+// Supabase environment variables (with fallback for standalone execution)
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://mock-spendwise.supabase.co';
+const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'mock-anon-key-spendwise';
+
+export const supabase = createClient(supabaseUrl, supabaseKey);
+
+const STORAGE_KEYS = {
+  USER: 'spendwise_user_profile',
+  SESSION: 'spendwise_active_session',
+  USERS_LIST: 'spendwise_registered_users',
+  EXPENSES: 'spendwise_expenses',
+  BUDGETS: 'spendwise_budgets',
+  SUBSCRIPTIONS: 'spendwise_subscriptions',
+  BILLS: 'spendwise_bills',
+  SAVINGS_GOALS: 'spendwise_savings_goals',
+  SHARED_GROUPS: 'spendwise_shared_groups',
+  CHALLENGES: 'spendwise_challenges',
+};
+
+// Storage manager with initial seed data loading
+export const LocalDB = {
+  getRegisteredUsers(): UserProfile[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.USERS_LIST);
+    if (!raw) {
+      const initialUsers = [initialUserProfile];
+      localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(initialUsers));
+      return initialUsers;
+    }
+    return JSON.parse(raw);
+  },
+
+  saveRegisteredUser(user: UserProfile): void {
+    const users = this.getRegisteredUsers();
+    const idx = users.findIndex(u => u.id === user.id);
+    if (idx >= 0) {
+      users[idx] = user;
+    } else {
+      users.push(user);
+    }
+    localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+  },
+
+  findUserByIdentifier(identifier: string): UserProfile | undefined {
+    const clean = identifier.trim().toLowerCase();
+    const cleanHandle = clean.startsWith('@') ? clean.slice(1) : clean;
+    // Normalize phone numbers by removing spaces and dashes
+    const cleanPhone = clean.replace(/[\s-]/g, '');
+
+    const users = this.getRegisteredUsers();
+    return users.find(u => {
+      const uUsername = u.username?.toLowerCase();
+      const uPhone = u.phoneNumber?.replace(/[\s-]/g, '');
+      const uEmail = u.email?.toLowerCase();
+
+      return (
+        uUsername === cleanHandle ||
+        uPhone === cleanPhone ||
+        (cleanPhone.length === 10 && uPhone?.endsWith(cleanPhone)) ||
+        uEmail === clean
+      );
+    });
+  },
+
+  isUsernameAvailable(username: string, excludeUserId?: string): boolean {
+    const handle = username.trim().toLowerCase().replace(/^@/, '');
+    if (!handle || handle.length < 3) return false;
+    const users = this.getRegisteredUsers();
+    const match = users.find(u => u.username?.toLowerCase() === handle);
+    if (!match) return true;
+    return excludeUserId ? match.id === excludeUserId : false;
+  },
+
+  getActiveSession(): UserProfile | null {
+    const raw = localStorage.getItem(STORAGE_KEYS.SESSION);
+    if (!raw) {
+      // Default to initial user profile for smooth backward compatibility
+      return initialUserProfile;
+    }
+    return JSON.parse(raw);
+  },
+
+  setActiveSession(user: UserProfile | null): void {
+    if (!user) {
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(user));
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+      this.saveRegisteredUser(user);
+    }
+  },
+
+  getUserProfile(): UserProfile {
+    const session = this.getActiveSession();
+    if (session) return session;
+    const raw = localStorage.getItem(STORAGE_KEYS.USER);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(initialUserProfile));
+      return initialUserProfile;
+    }
+    return JSON.parse(raw);
+  },
+
+  updateUserProfile(profile: Partial<UserProfile>): UserProfile {
+    const current = this.getUserProfile();
+    const updated = { ...current, ...profile };
+    this.setActiveSession(updated);
+    return updated;
+  },
+
+  getExpenses(): Expense[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(initialExpenses));
+      return initialExpenses;
+    }
+    return JSON.parse(raw);
+  },
+
+  addExpense(expense: Omit<Expense, 'id' | 'createdAt'>): Expense {
+    const expenses = this.getExpenses();
+    const newExpense: Expense = {
+      ...expense,
+      id: `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    expenses.unshift(newExpense);
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+    return newExpense;
+  },
+
+  deleteExpense(id: string): void {
+    const expenses = this.getExpenses().filter(e => e.id !== id);
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+  },
+
+  getBudgets(): Budget[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.BUDGETS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(initialBudgets));
+      return initialBudgets;
+    }
+    return JSON.parse(raw);
+  },
+
+  getSubscriptions(): Subscription[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(initialSubscriptions));
+      return initialSubscriptions;
+    }
+    return JSON.parse(raw);
+  },
+
+  addSubscription(sub: Omit<Subscription, 'id'>): Subscription {
+    const subs = this.getSubscriptions();
+    const newSub: Subscription = {
+      ...sub,
+      id: `sub_${Date.now()}`
+    };
+    subs.push(newSub);
+    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(subs));
+    return newSub;
+  },
+
+  getBills(): Bill[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.BILLS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(initialBills));
+      return initialBills;
+    }
+    return JSON.parse(raw);
+  },
+
+  toggleBillPaid(id: string): Bill[] {
+    const bills = this.getBills().map(b => b.id === id ? { ...b, isPaid: !b.isPaid } : b);
+    localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(bills));
+    return bills;
+  },
+
+  getSavingsGoals(): SavingsGoal[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SAVINGS_GOALS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(initialSavingsGoals));
+      return initialSavingsGoals;
+    }
+    return JSON.parse(raw);
+  },
+
+  addSavingsGoal(goal: Omit<SavingsGoal, 'id' | 'createdAt'>): SavingsGoal {
+    const goals = this.getSavingsGoals();
+    const newGoal: SavingsGoal = {
+      ...goal,
+      id: `goal_${Date.now()}`,
+      createdAt: new Date().toISOString()
+    };
+    goals.push(newGoal);
+    localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(goals));
+    return newGoal;
+  },
+
+  updateSavingsGoalContribution(id: string, additionalAmount: number): SavingsGoal[] {
+    const goals = this.getSavingsGoals().map(g => {
+      if (g.id === id) {
+        return { ...g, currentAmount: g.currentAmount + additionalAmount };
+      }
+      return g;
+    });
+    localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(goals));
+    return goals;
+  },
+
+  getSharedGroups(): SharedGroup[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.SHARED_GROUPS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.SHARED_GROUPS, JSON.stringify([initialSharedGroup]));
+      return [initialSharedGroup];
+    }
+    return JSON.parse(raw);
+  },
+
+  addGroupExpense(groupId: string, payerId: string, payerName: string, description: string, amount: number, splitType: 'equal' | 'exact' | 'percentage'): void {
+    const groups = this.getSharedGroups();
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const perMember = Math.round(amount / group.members.length);
+    const splits = group.members.map(m => ({
+      memberId: m.id,
+      memberName: m.name,
+      amountOwed: perMember
+    }));
+
+    group.expenses.unshift({
+      id: `grp_exp_${Date.now()}`,
+      groupId,
+      payerId,
+      payerName,
+      description,
+      amount,
+      splitType,
+      splits,
+      date: new Date().toISOString().split('T')[0]
+    });
+
+    localStorage.setItem(STORAGE_KEYS.SHARED_GROUPS, JSON.stringify(groups));
+  },
+
+  getChallenges(): Challenge[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.CHALLENGES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.CHALLENGES, JSON.stringify(initialChallenges));
+      return initialChallenges;
+    }
+    return JSON.parse(raw);
+  },
+
+  resetAllData(): void {
+    localStorage.clear();
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(initialUserProfile));
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(initialExpenses));
+    localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(initialBudgets));
+    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(initialSubscriptions));
+    localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(initialBills));
+    localStorage.setItem(STORAGE_KEYS.SAVINGS_GOALS, JSON.stringify(initialSavingsGoals));
+    localStorage.setItem(STORAGE_KEYS.SHARED_GROUPS, JSON.stringify([initialSharedGroup]));
+    localStorage.setItem(STORAGE_KEYS.CHALLENGES, JSON.stringify(initialChallenges));
+  }
+};

@@ -1,0 +1,28 @@
+# Antigravity Workspace Security Configuration (.agent/config.yaml)
+permissions:
+  # Commands permitted to execute automatically without user prompting
+  command_allowlist:
+    - "npm run dev"
+    - "npm run test"
+    - "npm run build"
+    - "node scripts/*"
+    - "python scripts/*"
+    - "python3 scripts/*"
+    - "git status"
+    - "git diff"
+
+  # Commands explicitly blocked from autonomous execution under all circumstances
+  command_denylist:
+    - "rm -rf /"
+    - "rm -rf *"
+    - "curl * | sh"
+    - "wget * | bash"
+    - "drop table *"
+    - "git push --force"
+
+  # Restricts the Browser Agent from navigating to untrusted external domains
+  browser_url_allowlist:
+    - "http://localhost:*"
+    - "http://127.0.0.1:*"
+    - "https://*.supabase.co"
+    - "https://generativelanguage.googleapis.com"
