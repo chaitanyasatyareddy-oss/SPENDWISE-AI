@@ -687,170 +687,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   } | null>(null);
 
   const loginWithGoogle = async (
-    googleProfile?: GoogleAuthProfile,
-    password?: string,
-    rememberMe: boolean = true
+    _profile?: GoogleAuthProfile,
+    _password?: string,
+    _rememberMe: boolean = true
   ): Promise<{ success: boolean; error?: string }> => {
     try {
-      const profile = googleProfile || {
-        name: 'Chithanya Reddy',
-        email: 'chithanya.reddy@gmail.com',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      };
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account',
+          },
+        },
+      });
 
-      const cleanEmail = profile.email.trim().toLowerCase();
-
-      // Password is REQUIRED for authentication
-      if (!password || !password.trim()) {
-        return { success: false, error: 'Please enter your password to authenticate with this Google account.' };
-      }
-
-      // 1. First attempt real Supabase Auth password authentication
-      try {
-        const { data: sbData } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: password.trim(),
-        });
-        if (sbData?.user) {
-          const userProfile: UserProfile = {
-            id: sbData.user.id,
-            email: cleanEmail,
-            username: cleanEmail.split('@')[0],
-            fullName: sbData.user.user_metadata?.full_name || profile.name,
-            avatarUrl: profile.avatarUrl,
-            authProvider: 'google',
-            needsUsername: false,
-            primaryCurrency: 'INR',
-            currencySymbol: '₹',
-            locale: 'en',
-            themePreference: 'light',
-            targetMonthlyBudget: 35000,
-            monthlyIncome: 65000,
-          };
-          LocalDB.setActiveSession(userProfile);
-          setUser(userProfile);
-
-          if (rememberMe) {
-            const customerToSave: RememberedCustomer = {
-              identifier: cleanEmail,
-              fullName: userProfile.fullName,
-              username: userProfile.username,
-              email: cleanEmail,
-              avatarUrl: userProfile.avatarUrl,
-              rememberMe: true,
-              lastLoginAt: new Date().toISOString(),
-            };
-            LocalDB.saveRememberedCustomer(customerToSave);
-            setRememberedCustomer(customerToSave);
-          }
-          return { success: true };
-        }
-      } catch {
-        // Fallback to local accounts check
-      }
-
-      // 2. Check local accounts and demo account password
-      const existingUser = LocalDB.findUserByIdentifier(cleanEmail);
-      const isDemo =
-        cleanEmail === 'chithanya.reddy@gmail.com' ||
-        cleanEmail === 'chithanya@spendwise.ai' ||
-        cleanEmail === 'satya.reddy@gmail.com' ||
-        (existingUser && existingUser.id === 'usr_spendwise_demo_01');
-
-      const isPasswordValid =
-        (isDemo && (password === 'Password@123' || password === 'demo')) ||
-        (existingUser && (existingUser.password === password || password === 'Password@123'));
-
-      if (existingUser || isDemo) {
-        if (!isPasswordValid) {
+      if (error) {
+        if (
+          error.message.includes('Unsupported provider') ||
+          error.message.includes('not enabled') ||
+          (error as any).code === 'provider_disabled'
+        ) {
           return {
             success: false,
-            error: 'Incorrect password for this Google account. Please verify your password and try again.',
+            error:
+              'Google Sign-In provider is not enabled in your Supabase project. Please enable Google in Supabase Dashboard (Authentication -> Providers -> Google) or sign in using your Email & Password.',
           };
         }
-
-        const userToLogin = existingUser || {
-          id: `usr_g_${Date.now()}`,
-          email: cleanEmail,
-          username: cleanEmail.split('@')[0],
-          fullName: profile.name,
-          avatarUrl: profile.avatarUrl,
-          authProvider: 'google',
-          needsUsername: false,
-          primaryCurrency: 'INR',
-          currencySymbol: '₹',
-          locale: 'en',
-          themePreference: 'light',
-          targetMonthlyBudget: 35000,
-          monthlyIncome: 65000,
-        };
-
-        LocalDB.setActiveSession(userToLogin);
-        setUser(userToLogin);
-
-        if (rememberMe) {
-          const customerToSave: RememberedCustomer = {
-            identifier: cleanEmail,
-            fullName: userToLogin.fullName,
-            username: userToLogin.username,
-            email: cleanEmail,
-            avatarUrl: userToLogin.avatarUrl,
-            rememberMe: true,
-            lastLoginAt: new Date().toISOString(),
-          };
-          LocalDB.saveRememberedCustomer(customerToSave);
-          setRememberedCustomer(customerToSave);
-        }
-
-        return { success: true };
-      }
-
-      // 3. For new Google accounts: password must meet minimum security standard (8+ characters)
-      if (password.length < 8) {
-        return {
-          success: false,
-          error: 'Password must be at least 8 characters long for new Google account registration.',
-        };
-      }
-
-      // Register new user
-      const newUser: UserProfile = {
-        id: `usr_g_${Date.now()}`,
-        email: cleanEmail,
-        username: cleanEmail.split('@')[0],
-        fullName: profile.name,
-        avatarUrl: profile.avatarUrl,
-        authProvider: 'google',
-        needsUsername: false,
-        primaryCurrency: 'INR',
-        currencySymbol: '₹',
-        locale: 'en',
-        themePreference: 'light',
-        targetMonthlyBudget: 35000,
-        monthlyIncome: 65000,
-      };
-
-      LocalDB.saveRegisteredUser(newUser);
-      LocalDB.setActiveSession(newUser);
-      setUser(newUser);
-
-      if (rememberMe) {
-        const customerToSave: RememberedCustomer = {
-          identifier: cleanEmail,
-          fullName: newUser.fullName,
-          username: newUser.username,
-          email: cleanEmail,
-          avatarUrl: newUser.avatarUrl,
-          rememberMe: true,
-          lastLoginAt: new Date().toISOString(),
-        };
-        LocalDB.saveRememberedCustomer(customerToSave);
-        setRememberedCustomer(customerToSave);
+        return { success: false, error: error.message };
       }
 
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Google sign-in failed' };
+      return { success: false, error: err.message || 'Google authentication failed.' };
     }
   };
 
