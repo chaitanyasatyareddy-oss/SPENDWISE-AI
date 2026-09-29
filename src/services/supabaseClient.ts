@@ -60,6 +60,7 @@ export const LocalDB = {
   },
 
   findUserByIdentifier(identifier: string): UserProfile | undefined {
+    if (!identifier || identifier.trim().length < 2) return undefined;
     const clean = identifier.trim().toLowerCase();
     const cleanHandle = clean.startsWith('@') ? clean.slice(1) : clean;
     // Normalize phone numbers by removing spaces and dashes
@@ -71,23 +72,34 @@ export const LocalDB = {
       const uPhone = u.phoneNumber?.replace(/[\s-]/g, '');
       const uEmail = u.email?.toLowerCase();
 
-      return (
-        uUsername === cleanHandle ||
-        uPhone === cleanPhone ||
-        (cleanPhone.length === 10 && uPhone?.endsWith(cleanPhone)) ||
-        uEmail === clean
-      );
+      // Check username match
+      if (uUsername && uUsername === cleanHandle) return true;
+
+      // Check email match
+      if (uEmail && uEmail === clean) return true;
+
+      // Check phone match only if input consists of valid phone digits
+      if (/^\+?[0-9]{7,15}$/.test(cleanPhone) && uPhone) {
+        if (uPhone === cleanPhone) return true;
+        if (cleanPhone.length >= 10 && uPhone.endsWith(cleanPhone)) return true;
+      }
+
+      return false;
     });
   },
 
   isUsernameAvailable(username: string, excludeUserId?: string): boolean {
     const handle = username.trim().toLowerCase().replace(/^@/, '');
-    if (!handle || handle.length < 3) return false;
+    if (!handle || handle.length < 3 || handle.length > 20) return false;
+    // Must start with a letter and contain only alphanumeric characters or underscores
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(handle)) return false;
+
     const users = this.getRegisteredUsers();
     const match = users.find(u => u.username?.toLowerCase() === handle);
     if (!match) return true;
     return excludeUserId ? match.id === excludeUserId : false;
   },
+
 
   getActiveSession(): UserProfile | null {
     const raw = localStorage.getItem(STORAGE_KEYS.SESSION);

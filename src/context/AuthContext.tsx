@@ -49,11 +49,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Artificial latency for realism
     await new Promise((res) => setTimeout(res, 450));
 
+    const cleanId = identifier.trim();
+    if (!cleanId) {
+      return { success: false, error: 'Please enter your username, email, or mobile number.' };
+    }
+    if (!password) {
+      return { success: false, error: 'Please enter your password.' };
+    }
+
     // Optional Supabase Auth attempt if email
-    if (identifier.includes('@') && !identifier.startsWith('@')) {
+    if (cleanId.includes('@') && !cleanId.startsWith('@')) {
       try {
         const { data: sbData } = await supabase.auth.signInWithPassword({
-          email: identifier.trim(),
+          email: cleanId,
           password,
         });
         if (sbData?.user) {
@@ -64,14 +72,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    const foundUser = LocalDB.findUserByIdentifier(identifier);
+    const foundUser = LocalDB.findUserByIdentifier(cleanId);
     if (!foundUser) {
-      return { success: false, error: 'No account found with this username or phone number.' };
+      return {
+        success: false,
+        error: 'Invalid login credentials. No account found with this username or mobile number.'
+      };
     }
 
-    // Verify password
-    if (foundUser.password && foundUser.password !== password && password !== 'demo') {
-      return { success: false, error: 'Invalid password. Please check your credentials.' };
+    // Strict Password Verification
+    const isDemoUser = foundUser.id === 'usr_spendwise_demo_01';
+    const isPasswordCorrect =
+      foundUser.password === password ||
+      (isDemoUser && (password === 'Password@123' || password === 'demo'));
+
+    if (!isPasswordCorrect) {
+      return {
+        success: false,
+        error: 'Incorrect password. Please verify your credentials and try again.'
+      };
     }
 
     LocalDB.setActiveSession(foundUser);
@@ -103,7 +122,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   };
 
-
   // Signup handler
   const signup = async (
     fullName: string,
@@ -112,17 +130,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     rememberMe: boolean = true
   ): Promise<{ success: boolean; error?: string }> => {
-
     await new Promise((res) => setTimeout(res, 500));
 
+    // 1. Full Name validation: must contain letters and not only digits
+    const cleanName = fullName.trim();
+    if (!cleanName || cleanName.length < 2) {
+      return { success: false, error: 'Full Name must be at least 2 characters long.' };
+    }
+    if (!/[a-zA-Z]/.test(cleanName) || /^\d+$/.test(cleanName)) {
+      return {
+        success: false,
+        error: 'Full Name must contain letters (e.g. "Chithanya Reddy"). Numbers-only are not allowed.'
+      };
+    }
+
+    // 2. Username validation: must start with a letter and be 3-20 chars alphanumeric or underscore
     const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(cleanUsername)) {
+      return {
+        success: false,
+        error: 'Username must start with a letter and contain 3 to 20 letters, numbers, or underscores (e.g. "chithanya_01").'
+      };
+    }
     if (!checkUsernameAvailability(cleanUsername)) {
-      return { success: false, error: `Username @${cleanUsername} is already taken.` };
+      return { success: false, error: `Username @${cleanUsername} is already taken. Please choose another.` };
+    }
+
+    // 3. Mobile Number validation: must be numeric 10-15 digits
+    const rawDigits = phoneNumber.replace(/[\s-]/g, '');
+    if (!/^\+?[0-9]{10,15}$/.test(rawDigits)) {
+      return {
+        success: false,
+        error: 'Please enter a valid 10 to 15 digit mobile number (e.g. "+91 9876543210" or "9876543210"). Letters are not allowed.'
+      };
     }
 
     const existingPhone = LocalDB.findUserByIdentifier(phoneNumber);
     if (existingPhone) {
-      return { success: false, error: 'An account with this phone number already exists.' };
+      return { success: false, error: 'An account with this mobile number already exists. Please sign in instead.' };
+    }
+
+    // 4. Password validation: minimum 6 chars
+    if (!password || password.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return { success: false, error: 'Password must contain both letters and numbers for account security.' };
     }
 
     const newUser: UserProfile = {
@@ -131,16 +184,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       username: cleanUsername,
       phoneNumber: phoneNumber.trim(),
       password,
-      fullName: fullName.trim(),
+      fullName: cleanName,
       needsUsername: false,
       primaryCurrency: 'INR',
       currencySymbol: '₹',
       locale: 'en',
       themePreference: 'light',
       targetMonthlyBudget: 35000,
-
       monthlyIncome: 65000,
     };
+
 
     LocalDB.setActiveSession(newUser);
     setUser(newUser);

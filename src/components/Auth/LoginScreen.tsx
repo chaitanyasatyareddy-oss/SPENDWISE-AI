@@ -12,12 +12,8 @@ import {
   Sparkles,
   KeyRound,
   ShieldCheck,
-  Check,
   BookmarkCheck,
-  UserCheck,
   RefreshCw,
-  Zap,
-  Globe
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -47,6 +43,7 @@ export const LoginScreen: React.FC = () => {
   // Real-time username availability state
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
 
   // Error & loading
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -65,25 +62,50 @@ export const LoginScreen: React.FC = () => {
     }
   }, [rememberedCustomer]);
 
-  // Debounced username availability check
+  // Real-time debounced username availability & format check
   useEffect(() => {
     if (mode !== 'signup' || !username.trim()) {
       setUsernameAvailable(null);
+      setUsernameError(null);
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    const clean = username.trim().toLowerCase().replace(/^@/, '');
+
+    // Must start with an alphabet letter
+    if (!/^[a-z]/.test(clean)) {
+      setUsernameError('Must start with a letter (a-z)');
+      setUsernameAvailable(false);
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    if (clean.length < 3) {
+      setUsernameError('Must be at least 3 characters');
+      setUsernameAvailable(false);
+      setIsCheckingUsername(false);
+      return;
+    }
+
+    if (!/^[a-z][a-z0-9_]{2,19}$/.test(clean)) {
+      setUsernameError('Only letters, numbers, and _ allowed (3-20 chars)');
+      setUsernameAvailable(false);
       setIsCheckingUsername(false);
       return;
     }
 
     setIsCheckingUsername(true);
+    setUsernameError(null);
+
     const timer = setTimeout(() => {
-      const clean = username.trim().toLowerCase().replace(/^@/, '');
-      if (clean.length < 3) {
-        setUsernameAvailable(false);
-      } else {
-        const available = checkUsernameAvailability(clean);
-        setUsernameAvailable(available);
+      const available = checkUsernameAvailability(clean);
+      setUsernameAvailable(available);
+      if (!available) {
+        setUsernameError('Username is already taken');
       }
       setIsCheckingUsername(false);
-    }, 350);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [username, mode, checkUsernameAvailability]);
@@ -104,22 +126,75 @@ export const LoginScreen: React.FC = () => {
 
   const strength = calculatePasswordStrength(password);
 
+  // Form submission with strict validation
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
 
     if (mode === 'signin') {
-      const result = await login(identifier, password, rememberMe);
-      if (!result.success) {
-        setErrorMessage(result.error || 'Failed to sign in. Please verify your credentials.');
-      }
-    } else {
-      if (usernameAvailable === false) {
-        setErrorMessage('Please choose an available username.');
+      if (!identifier.trim()) {
+        setErrorMessage('Please enter your username, email, or mobile number.');
         setIsLoading(false);
         return;
       }
+      if (!password) {
+        setErrorMessage('Please enter your password.');
+        setIsLoading(false);
+        return;
+      }
+
+      const result = await login(identifier, password, rememberMe);
+      if (!result.success) {
+        setErrorMessage(result.error || 'Invalid credentials. Please verify your details.');
+      }
+    } else {
+      // 1. Full name validation
+      const cleanName = fullName.trim();
+      if (!cleanName || cleanName.length < 2) {
+        setErrorMessage('Full Name must be at least 2 characters long.');
+        setIsLoading(false);
+        return;
+      }
+      if (!/[a-zA-Z]/.test(cleanName) || /^\d+$/.test(cleanName)) {
+        setErrorMessage('Full Name must contain letters (e.g. "Chithanya Reddy"). Numbers-only are not allowed.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Username validation
+      const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
+      if (!/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(cleanUsername)) {
+        setErrorMessage('Username must start with a letter and contain 3 to 20 letters, numbers, or underscores.');
+        setIsLoading(false);
+        return;
+      }
+      if (usernameAvailable === false) {
+        setErrorMessage(usernameError || 'Please choose an available username.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. Mobile Number validation
+      const cleanDigits = phoneNumber.replace(/[\s-]/g, '');
+      if (!/^\+?[0-9]{10,15}$/.test(cleanDigits)) {
+        setErrorMessage('Please enter a valid 10 to 15 digit mobile number (e.g. "+91 9876543210").');
+        setIsLoading(false);
+        return;
+      }
+
+      // 4. Password validation
+      if (!password || password.length < 6) {
+        setErrorMessage('Password must be at least 6 characters long.');
+        setIsLoading(false);
+        return;
+      }
+      if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+        setErrorMessage('Password must contain both letters and numbers for account security.');
+        setIsLoading(false);
+        return;
+      }
+
       const result = await signup(fullName, username, phoneNumber, password, rememberMe);
       if (!result.success) {
         setErrorMessage(result.error || 'Failed to create account.');
@@ -132,20 +207,6 @@ export const LoginScreen: React.FC = () => {
     setErrorMessage(null);
     setIsLoading(true);
     await login('chithanya', 'Password@123', rememberMe);
-    setIsLoading(false);
-  };
-
-  const handleQuickRememberedLogin = async () => {
-    if (!rememberedCustomer) return;
-    setErrorMessage(null);
-    setIsLoading(true);
-    // Use demo password or prompt
-    const result = await login(rememberedCustomer.identifier, 'Password@123', true);
-    if (!result.success) {
-      // If Password@123 wasn't the password, fill field and focus password
-      setIdentifier(rememberedCustomer.identifier);
-      setErrorMessage('Please enter your password below to continue.');
-    }
     setIsLoading(false);
   };
 
@@ -162,6 +223,16 @@ export const LoginScreen: React.FC = () => {
     const res = await resetPassword(forgotIdentifier);
     setForgotStatus(res.message);
   };
+
+  // Live validation helpers
+  const isNameInvalid =
+    fullName.trim().length > 0 &&
+    (!/[a-zA-Z]/.test(fullName) || /^\d+$/.test(fullName) || fullName.trim().length < 2);
+
+  const cleanPhoneDigits = phoneNumber.replace(/[\s-]/g, '');
+  const isPhoneInvalid =
+    phoneNumber.trim().length > 0 &&
+    (!/^\+?[0-9]{10,15}$/.test(cleanPhoneDigits));
 
   return (
     <div className="w-full max-w-lg mx-auto my-auto p-4 sm:p-6 space-y-6 animate-in fade-in duration-300">
@@ -290,42 +361,55 @@ export const LoginScreen: React.FC = () => {
               {/* Full Name */}
               <div className="space-y-1.5 text-left">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {t.auth.fullNameLabel}
+                  {t.auth.fullNameLabel} <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative flex items-center">
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
                   <input
                     type="text"
                     required
-                    placeholder={t.auth.fullNamePlaceholder}
+                    placeholder="e.g. Chithanya Reddy"
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                      isNameInvalid
+                        ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                    }`}
                   />
                 </div>
+                {isNameInvalid && (
+                  <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    <span>Full Name must contain letters (numbers only not allowed).</span>
+                  </p>
+                )}
               </div>
 
               {/* Username with Real-Time Availability Check */}
               <div className="space-y-1.5 text-left">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {t.auth.usernameLabel}
+                    {t.auth.usernameLabel} <span className="text-rose-500">*</span>
                   </label>
                   {isCheckingUsername && (
                     <span className="text-[10px] text-indigo-500 animate-pulse">
-                      {t.auth.checkingUsername}
+                      Checking availability...
                     </span>
                   )}
                   {!isCheckingUsername && usernameAvailable === true && (
                     <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" />
-                      {t.auth.usernameAvailable}
+                      Username is available
                     </span>
                   )}
                   {!isCheckingUsername && usernameAvailable === false && (
                     <span className="text-[10px] text-rose-500 font-medium flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
-                      {t.auth.usernameTaken}
+                      {usernameError || 'Invalid username'}
                     </span>
                   )}
                 </div>
@@ -334,30 +418,55 @@ export const LoginScreen: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder={t.auth.usernamePlaceholder}
+                    placeholder="e.g. chithanya_01"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    onChange={(e) => {
+                      setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                      usernameAvailable === false
+                        ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                    }`}
                   />
                 </div>
+                <p className="text-[10px] text-slate-400">
+                  Must start with a letter (a-z), 3–20 alphanumeric or underscore characters.
+                </p>
               </div>
 
               {/* Phone Number */}
               <div className="space-y-1.5 text-left">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {t.auth.phoneLabel}
+                  {t.auth.phoneLabel} <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative flex items-center">
                   <Smartphone className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
                   <input
                     type="tel"
                     required
-                    placeholder={t.auth.phonePlaceholder}
+                    placeholder="+91 9876543210"
                     value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    onChange={(e) => {
+                      // Disallow letters - only permit digits, space, hyphen and +
+                      const filtered = e.target.value.replace(/[^0-9+\s-]/g, '');
+                      setPhoneNumber(filtered);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
+                    className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                      isPhoneInvalid
+                        ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
+                        : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                    }`}
                   />
                 </div>
+                {isPhoneInvalid && (
+                  <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    <span>Enter a valid 10 to 15 digit mobile number (letters are not allowed).</span>
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -378,9 +487,12 @@ export const LoginScreen: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder={t.auth.identifierPlaceholder}
+                  placeholder="@chithanya or +91 9876543210"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
                 />
               </div>
@@ -391,7 +503,7 @@ export const LoginScreen: React.FC = () => {
           <div className="space-y-1.5 text-left">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {t.auth.passwordLabel}
+                {t.auth.passwordLabel} <span className="text-rose-500">*</span>
               </label>
               {mode === 'signin' && (
                 <button
@@ -411,9 +523,12 @@ export const LoginScreen: React.FC = () => {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
-                placeholder={t.auth.passwordPlaceholder}
+                placeholder={mode === 'signup' ? 'Min. 6 chars (letters & numbers)' : 'Enter your password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (errorMessage) setErrorMessage(null);
+                }}
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
               />
               <button
@@ -431,6 +546,9 @@ export const LoginScreen: React.FC = () => {
               <div className="space-y-1 pt-1">
                 <div className="flex items-center justify-between text-[10px] text-slate-500">
                   <span>Strength: {strength.label}</span>
+                  {password.length < 6 && (
+                    <span className="text-rose-500 font-medium">Must be at least 6 characters</span>
+                  )}
                 </div>
                 <div className="grid grid-cols-3 gap-1 h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div className={`h-full ${strength.score >= 1 ? strength.color : 'bg-transparent'}`}></div>
@@ -441,9 +559,7 @@ export const LoginScreen: React.FC = () => {
             )}
           </div>
 
-          {/* ======================================================== */}
-          {/* REMEMBER CUSTOMER LOGIN DETAILS CHECKBOX */}
-          {/* ======================================================== */}
+          {/* Remember Customer Details Checkbox */}
           <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 text-left transition-colors">
             <label className="flex items-start gap-2.5 cursor-pointer select-none">
               <input
@@ -473,7 +589,7 @@ export const LoginScreen: React.FC = () => {
             {isLoading ? (
               <span className="flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Authenticating...</span>
+                <span>Verifying credentials...</span>
               </span>
             ) : (
               <>
