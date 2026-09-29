@@ -12,7 +12,6 @@ import {
   Sparkles,
   KeyRound,
   ShieldCheck,
-  BookmarkCheck,
   RefreshCw,
   ArrowLeft,
   X,
@@ -52,7 +51,6 @@ export const LoginScreen: React.FC = () => {
     loginWithGoogle,
     login,
     rememberedCustomer,
-    clearRememberedCustomer,
   } = useAuth();
   const { t } = useLanguage();
 
@@ -136,19 +134,22 @@ export const LoginScreen: React.FC = () => {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Pre-fill remembered customer details on initial load
+  // Pre-fill remembered customer details on initial load (excluding demo user name)
   useEffect(() => {
     if (rememberedCustomer) {
-      if (rememberedCustomer.email) {
-        setSignInEmail(rememberedCustomer.email);
-      } else if (rememberedCustomer.identifier) {
-        setSignInEmail(rememberedCustomer.identifier);
+      const id = (rememberedCustomer.identifier || '').toLowerCase();
+      const email = (rememberedCustomer.email || '').toLowerCase();
+      const name = (rememberedCustomer.fullName || '').toLowerCase();
+      if (!id.includes('chithanya') && !email.includes('chithanya') && !name.includes('chithanya')) {
+        if (rememberedCustomer.email) {
+          setSignInEmail(rememberedCustomer.email);
+        }
+        if (rememberedCustomer.phoneNumber) {
+          const cleaned = rememberedCustomer.phoneNumber.replace('+91', '').trim();
+          setMobileNumber(cleaned);
+        }
+        setSignInRememberMe(rememberedCustomer.rememberMe !== false);
       }
-      if (rememberedCustomer.phoneNumber) {
-        const cleaned = rememberedCustomer.phoneNumber.replace('+91', '').trim();
-        setMobileNumber(cleaned);
-      }
-      setSignInRememberMe(rememberedCustomer.rememberMe !== false);
     }
   }, [rememberedCustomer]);
 
@@ -286,7 +287,7 @@ export const LoginScreen: React.FC = () => {
         message: result.error || 'Incorrect email or password. Please verify your credentials and try again.',
       });
     } else {
-      setToast({ type: 'success', message: 'Signed in successfully! Welcome to Gov Saathi.' });
+      setToast({ type: 'success', message: 'Signed in successfully! Welcome to SpendWise.' });
     }
   };
 
@@ -384,7 +385,7 @@ export const LoginScreen: React.FC = () => {
 
     setToast({
       type: 'success',
-      message: 'Mobile number verified successfully! Welcome to Gov Saathi.',
+      message: 'Mobile number verified successfully! Welcome to SpendWise.',
     });
   };
 
@@ -494,7 +495,7 @@ export const LoginScreen: React.FC = () => {
       setGoogleStep('choose');
       setSelectedGoogleAccount(null);
       setGooglePassword('');
-      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to Gov Saathi.' });
+      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to SpendWise.' });
     }
   };
 
@@ -510,21 +511,13 @@ export const LoginScreen: React.FC = () => {
   // Quick Demo Login Handler
   const handleQuickDemoLogin = async () => {
     setIsLoading(true);
-    const result = await login('chithanya', 'Password@123', true);
+    const result = await login('9063534530', 'Password@123', true);
     setIsLoading(false);
     if (result.success) {
-      setToast({ type: 'success', message: 'Welcome to Gov Saathi Demo!' });
+      setToast({ type: 'success', message: 'Welcome to SpendWise Demo!' });
     } else {
       setToast({ type: 'error', message: result.error || 'Demo login failed.' });
     }
-  };
-
-  const handleSwitchAccount = () => {
-    clearRememberedCustomer();
-    setSignInEmail('');
-    setSignInPassword('');
-    setMobileNumber('');
-    setToast(null);
   };
 
   const nameError = getNameError();
@@ -571,9 +564,11 @@ export const LoginScreen: React.FC = () => {
       {/* Brand Hero Header */}
       <div className="text-center space-y-2">
         <div className="inline-flex relative items-center justify-center">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center font-black text-white text-xl shadow-xl shadow-indigo-500/25 ring-4 ring-indigo-500/10">
-            GS
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="SpendWise Logo"
+            className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-indigo-500/25 ring-4 ring-indigo-500/10"
+          />
           <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
@@ -582,10 +577,10 @@ export const LoginScreen: React.FC = () => {
 
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Gov Saathi
+            SpendWise
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto mt-1 font-medium">
-            Smart Government Services & Financial Intelligence Platform
+            Track • Analyze • Save Your Money
           </p>
         </div>
 
@@ -598,39 +593,6 @@ export const LoginScreen: React.FC = () => {
 
       {/* Main Authentication Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 dark:shadow-none space-y-5 transition-all text-left">
-        {/* Remembered Customer Welcome Banner */}
-        {rememberedCustomer && (
-          <div className="bg-gradient-to-r from-indigo-50 via-violet-50 to-indigo-50/50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 animate-in fade-in">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-bold flex items-center justify-center text-xs shadow-md shadow-indigo-500/20 flex-shrink-0">
-                {rememberedCustomer.fullName ? rememberedCustomer.fullName.charAt(0).toUpperCase() : 'G'}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    Welcome back, {rememberedCustomer.fullName || rememberedCustomer.identifier}!
-                  </span>
-                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    <BookmarkCheck className="w-2.5 h-2.5" />
-                    Remembered
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                  {rememberedCustomer.identifier}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSwitchAccount}
-              className="px-2.5 py-1 text-[11px] text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 hover:underline transition-colors font-medium flex-shrink-0"
-              title="Clear saved details on this device"
-            >
-              Switch
-            </button>
-          </div>
-        )}
 
         {/* ========================================================= */}
         {/* TWO CLEAR MODES: SIGN IN vs SIGN UP                       */}
@@ -1021,7 +983,7 @@ export const LoginScreen: React.FC = () => {
           <form onSubmit={handleSignUpSubmit} className="space-y-3.5 animate-in fade-in">
             <div className="space-y-0.5">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Create your Gov Saathi Account</span>
+                <span>Create your SpendWise Account</span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Register with your full name, email, Indian mobile number, and password.
@@ -1038,7 +1000,7 @@ export const LoginScreen: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Chithanya Reddy"
+                  placeholder="e.g. Rahul Sharma"
                   value={signUpFullName}
                   onBlur={() => setNameTouched(true)}
                   onChange={(e) => {
@@ -1325,7 +1287,7 @@ export const LoginScreen: React.FC = () => {
             className="w-full bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
           >
             <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>Quick Demo Access (Gov Saathi)</span>
+            <span>Quick Demo Access (SpendWise)</span>
           </button>
         </div>
       </div>
@@ -1443,7 +1405,7 @@ export const LoginScreen: React.FC = () => {
             {googleStep === 'choose' && (
               <div className="space-y-3.5 animate-in fade-in">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Choose a Google account to continue to <strong>Gov Saathi</strong>:
+                  Choose a Google account to continue to <strong>SpendWise</strong>:
                 </p>
 
                 <div className="space-y-2">
@@ -1451,22 +1413,22 @@ export const LoginScreen: React.FC = () => {
                     type="button"
                     onClick={() =>
                       handleSelectGoogleAccount({
-                        name: 'Chithanya Reddy',
-                        email: 'chithanya.reddy@gmail.com',
-                        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                        name: 'Rahul Sharma',
+                        email: 'rahul.sharma@gmail.com',
+                        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
                       })
                     }
                     className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
                   >
                     <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-                      CR
+                      RS
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                        Chithanya Reddy
+                        Rahul Sharma
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                        chithanya.reddy@gmail.com
+                        rahul.sharma@gmail.com
                       </p>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
@@ -1476,21 +1438,21 @@ export const LoginScreen: React.FC = () => {
                     type="button"
                     onClick={() =>
                       handleSelectGoogleAccount({
-                        name: 'Satya Reddy',
-                        email: 'satya.reddy@gmail.com',
+                        name: 'Priya Patel',
+                        email: 'priya.patel@gmail.com',
                       })
                     }
                     className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
                   >
                     <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-                      SR
+                      PP
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                        Satya Reddy
+                        Priya Patel
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                        satya.reddy@gmail.com
+                        priya.patel@gmail.com
                       </p>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />

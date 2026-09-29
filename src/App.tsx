@@ -36,9 +36,11 @@ export const AppContent: React.FC = () => {
         {/* Clean, Full-Width Top Bar for Login */}
         <header className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 sm:px-8 py-3 flex items-center justify-between sticky top-0 z-50">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center font-black text-white text-xs shadow-md shadow-indigo-500/20">
-              SW
-            </div>
+            <img
+              src="/logo.jpg"
+              alt="SpendWise Logo"
+              className="w-8 h-8 rounded-xl object-cover shadow-md shadow-indigo-500/20 ring-1 ring-slate-200 dark:ring-slate-700"
+            />
             <div>
               <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 <span>{t.appName}</span>
