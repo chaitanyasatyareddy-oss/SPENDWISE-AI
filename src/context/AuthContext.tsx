@@ -136,8 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       primaryCurrency: 'INR',
       currencySymbol: '₹',
       locale: 'en',
-      themePreference: 'system',
+      themePreference: 'light',
       targetMonthlyBudget: 35000,
+
       monthlyIncome: 65000,
     };
 

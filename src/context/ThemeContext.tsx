@@ -4,6 +4,7 @@ import { ThemeMode } from '../types';
 interface ThemeContextType {
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  toggleTheme: () => void;
   isDark: boolean;
 }
 
@@ -11,29 +12,14 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
-    return (localStorage.getItem('spendwise_theme') as ThemeMode) || 'system';
-  });
-
-  const [isSystemDark, setIsSystemDark] = useState<boolean>(() => {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const saved = localStorage.getItem('spendwise_theme');
+    if (saved === 'dark' || saved === 'light') {
+      return saved;
     }
-    return true; // default dark
+    return 'light'; // Clean light mode default
   });
 
-  // Listen to OS color scheme changes
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => {
-      setIsSystemDark(e.matches);
-    };
-
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, []);
-
-  const isDark = themeMode === 'dark' || (themeMode === 'system' && isSystemDark);
+  const isDark = themeMode === 'dark';
 
   // Apply dark class to root document element for Tailwind CSS
   useEffect(() => {
@@ -52,8 +38,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('spendwise_theme', mode);
   };
 
+  const toggleTheme = () => {
+    const nextMode: ThemeMode = themeMode === 'light' ? 'dark' : 'light';
+    setThemeMode(nextMode);
+  };
+
   return (
-    <ThemeContext.Provider value={{ themeMode, setThemeMode, isDark }}>
+    <ThemeContext.Provider value={{ themeMode, setThemeMode, toggleTheme, isDark }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -11,8 +11,9 @@ export const initialUserProfile: UserProfile = {
   primaryCurrency: 'INR',
   currencySymbol: '₹',
   locale: 'en',
-  themePreference: 'system',
+  themePreference: 'light',
   targetMonthlyBudget: 35000,
+
   monthlyIncome: 65000,
 };
 

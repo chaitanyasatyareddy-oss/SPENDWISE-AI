@@ -27,7 +27,8 @@ export type LanguageCode =
   | 'zh' // Chinese
   | 'ja'; // Japanese
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark';
+
 
 export type NeedWantTag = 'Need' | 'Want' | 'Unclear';
 

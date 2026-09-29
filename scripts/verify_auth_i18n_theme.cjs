@@ -145,22 +145,21 @@ assert(resolved.auth.signInButton === "లాగిన్ అవ్వండి"
 // -------------------------------------------------------------
 // 3. THEME CONTROLLER & HIGH CONTRAST TESTS
 // -------------------------------------------------------------
-console.log('\n[STAGE 3] Testing Light / Dark / System Theme Controller:');
+console.log('\n[STAGE 3] Testing Light / Dark Theme Controller (System theme removed):');
 
-const supportedThemes = ['light', 'dark', 'system'];
+const supportedThemes = ['light', 'dark'];
 assert(supportedThemes.includes('light'), 'Light theme mode supported');
 assert(supportedThemes.includes('dark'), 'Dark theme mode supported');
-assert(supportedThemes.includes('system'), 'System OS match mode supported');
+assert(!supportedThemes.includes('system'), 'System OS match mode safely removed');
 
-function resolveTheme(mode, systemPrefersDark) {
-  if (mode === 'system') return systemPrefersDark ? 'dark' : 'light';
-  return mode;
+function resolveTheme(mode) {
+  return mode === 'dark' ? 'dark' : 'light';
 }
 
-assert(resolveTheme('light', true) === 'light', 'Forced Light mode renders light');
-assert(resolveTheme('dark', false) === 'dark', 'Forced Dark mode renders dark');
-assert(resolveTheme('system', true) === 'dark', 'System mode on dark OS resolves to dark');
-assert(resolveTheme('system', false) === 'light', 'System mode on light OS resolves to light');
+assert(resolveTheme('light') === 'light', 'Light mode renders light');
+assert(resolveTheme('dark') === 'dark', 'Dark mode renders dark');
+assert(resolveTheme('unknown') === 'light', 'Fallback default resolves to light');
+
 
 // -------------------------------------------------------------
 // 4. REGRESSION VERIFICATION OF EXISTING FEATURES
