@@ -13,7 +13,9 @@ import {
 
 // Supabase environment variables (with fallback for standalone execution)
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://ngqvqmhjooowoxlmwfun.supabase.co';
-const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'mock-anon-key-spendwise';
+const supabaseKey =
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ncXZxbWhqb29vd294bG13ZnVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1ODc2MjEsImV4cCI6MjEwNjE2MzYyMX0._bzwHFqScIGiUp2yULYzCsKcjeEqwaaerbvm_1Mu1es';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -69,12 +71,14 @@ export const LocalDB = {
   },
 
   saveRegisteredUser(user: UserProfile): void {
+    const safeUser = { ...user };
+    delete safeUser.password;
     const users = this.getRegisteredUsers();
-    const idx = users.findIndex(u => u.id === user.id);
+    const idx = users.findIndex(u => u.id === safeUser.id);
     if (idx >= 0) {
-      users[idx] = user;
+      users[idx] = safeUser;
     } else {
-      users.push(user);
+      users.push(safeUser);
     }
     localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
   },
@@ -146,9 +150,11 @@ export const LocalDB = {
     if (!user) {
       localStorage.removeItem(STORAGE_KEYS.SESSION);
     } else {
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(user));
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-      this.saveRegisteredUser(user);
+      const safeUser = { ...user };
+      delete safeUser.password; // STRICT SECURITY: Never store password in localStorage
+      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(safeUser));
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(safeUser));
+      this.saveRegisteredUser(safeUser);
     }
   },
 

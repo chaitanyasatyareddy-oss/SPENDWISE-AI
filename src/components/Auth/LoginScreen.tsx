@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Lock,
   Smartphone,
-  AtSign,
+  Mail,
   User,
   ArrowRight,
   Eye,
@@ -14,91 +14,145 @@ import {
   ShieldCheck,
   BookmarkCheck,
   RefreshCw,
-  Phone,
-  MessageSquare,
   ArrowLeft,
   X,
-  UserCheck,
+  ExternalLink,
+  Info,
+  Check,
 } from 'lucide-react';
 import { useAuth, GoogleAuthProfile } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { normalizeIndianPhone } from '../../utils/phoneUtils';
+import {
+  nameSchema,
+  emailSchema,
+  phoneSchema,
+  evaluatePasswordRequirements,
+  signUpSchema,
+  signInWithEmailSchema,
+  normalizeIndianMobile,
+  formatIndianMobileDisplay,
+  getFirstZodError,
+} from '../../utils/validationSchemas';
+
+type AuthMode = 'signin' | 'signup';
+type SignInOption = 'email' | 'mobile';
+
+interface ToastState {
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
 
 export const LoginScreen: React.FC = () => {
   const {
-    login,
-    signup,
+    signUpWithEmail,
+    loginWithEmail,
+    sendSupabasePhoneOtp,
+    verifySupabasePhoneOtp,
+    sendPasswordResetEmail,
     loginWithGoogle,
-    sendPhoneOtp,
-    verifyPhoneOtp,
-    checkUsernameAvailability,
-    resetPassword,
+    login,
     rememberedCustomer,
     clearRememberedCustomer,
   } = useAuth();
   const { t } = useLanguage();
 
-  // Authentication mode & method
-  const [authMethod, setAuthMethod] = useState<'password' | 'phone_otp'>('phone_otp'); // Default to phone OTP since user is using it!
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [otpAuthMode, setOtpAuthMode] = useState<'signin' | 'signup'>('signin');
+  // Mode: SIGN IN or SIGN UP
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
 
-  // Password-based credentials
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  // Sign In Option: Email vs Mobile Number
+  const [signInOption, setSignInOption] = useState<SignInOption>('email');
 
-  // Signup fields
-  const [fullName, setFullName] = useState('');
-  const [username, setUsername] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  // ----------------------------------------------------
+  // Sign Up Form States
+  // ----------------------------------------------------
+  const [signUpFullName, setSignUpFullName] = useState('');
+  const [signUpEmail, setSignUpEmail] = useState('');
+  const [signUpMobile, setSignUpMobile] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [signUpConfirmPassword, setSignUpConfirmPassword] = useState('');
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+  const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState(false);
+  const [signUpRememberMe, setSignUpRememberMe] = useState(true);
 
-  // Indian Phone + OTP Verification state
-  const [otpPhone, setOtpPhone] = useState('90635 34530'); // Pre-filled with user's registered phone
-  const [otpFullName, setOtpFullName] = useState('');
+  // Field touch states for clean feedback on blur/type
+  const [nameTouched, setNameTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [mobileTouched, setMobileTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [confirmPasswordTouched, setConfirmPasswordTouched] = useState(false);
+
+  // ----------------------------------------------------
+  // Sign In Form States (Email)
+  // ----------------------------------------------------
+  const [signInEmail, setSignInEmail] = useState('');
+  const [signInPassword, setSignInPassword] = useState('');
+  const [showSignInPassword, setShowSignInPassword] = useState(false);
+  const [signInRememberMe, setSignInRememberMe] = useState(true);
+
+  // ----------------------------------------------------
+  // Sign In Form States (Mobile Number + Supabase OTP)
+  // ----------------------------------------------------
+  const [mobileNumber, setMobileNumber] = useState('90635 34530');
   const [otpStep, setOtpStep] = useState<'input' | 'verify'>('input');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [activeFormattedPhone, setActiveFormattedPhone] = useState('');
-  const [registeredAccountInfo, setRegisteredAccountInfo] = useState<string | null>(null);
-  const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
   const [otpTimer, setOtpTimer] = useState<number>(30);
   const [isResendDisabled, setIsResendDisabled] = useState(true);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Google Sign-In state & modal
+  // State when Supabase phone provider is not enabled
+  const [phoneProviderDisabled, setPhoneProviderDisabled] = useState(false);
+
+  // ----------------------------------------------------
+  // Toast, Error, and Loading States
+  // ----------------------------------------------------
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // ----------------------------------------------------
+  // Forgot Password Modal
+  // ----------------------------------------------------
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState<string | null>(null);
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  // ----------------------------------------------------
+  // Google Sign-In Modal & Step State
+  // ----------------------------------------------------
   const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [googleStep, setGoogleStep] = useState<'choose' | 'password'>('choose');
+  const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<GoogleAuthProfile | null>(null);
+  const [googlePassword, setGooglePassword] = useState('');
+  const [showGooglePassword, setShowGooglePassword] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
   const [customGoogleEmail, setCustomGoogleEmail] = useState('');
   const [customGoogleName, setCustomGoogleName] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  // Real-time username availability state
-  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
-  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
-  const [usernameError, setUsernameError] = useState<string | null>(null);
-
-  // Error & loading
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Forgot password modal
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotIdentifier, setForgotIdentifier] = useState('');
-  const [forgotStatus, setForgotStatus] = useState<string | null>(null);
+  // Toast Auto-Dismiss
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Pre-fill remembered customer details on initial load
   useEffect(() => {
-    if (rememberedCustomer && !identifier) {
-      setIdentifier(rememberedCustomer.identifier);
-      setRememberMe(rememberedCustomer.rememberMe !== false);
-      if (rememberedCustomer.phoneNumber) {
-        setOtpPhone(rememberedCustomer.phoneNumber.replace('+91', '').trim());
+    if (rememberedCustomer) {
+      if (rememberedCustomer.email) {
+        setSignInEmail(rememberedCustomer.email);
+      } else if (rememberedCustomer.identifier) {
+        setSignInEmail(rememberedCustomer.identifier);
       }
+      if (rememberedCustomer.phoneNumber) {
+        const cleaned = rememberedCustomer.phoneNumber.replace('+91', '').trim();
+        setMobileNumber(cleaned);
+      }
+      setSignInRememberMe(rememberedCustomer.rememberMe !== false);
     }
   }, [rememberedCustomer]);
 
-  // Resend OTP countdown timer
+  // OTP Countdown Timer
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     if (otpStep === 'verify' && otpTimer > 0) {
@@ -114,229 +168,236 @@ export const LoginScreen: React.FC = () => {
     };
   }, [otpStep, otpTimer]);
 
-  // Real-time debounced username availability & format check
-  useEffect(() => {
-    if (mode !== 'signup' || !username.trim()) {
-      setUsernameAvailable(null);
-      setUsernameError(null);
-      setIsCheckingUsername(false);
-      return;
-    }
+  // Evaluate Password Requirements in Real-Time
+  const pwdChecklist = evaluatePasswordRequirements(signUpPassword);
 
-    const clean = username.trim().toLowerCase().replace(/^@/, '');
-
-    // Must start with an alphabet letter
-    if (!/^[a-z]/.test(clean)) {
-      setUsernameError('Must start with a letter (a-z)');
-      setUsernameAvailable(false);
-      setIsCheckingUsername(false);
-      return;
-    }
-
-    if (clean.length < 3) {
-      setUsernameError('Must be at least 3 characters');
-      setUsernameAvailable(false);
-      setIsCheckingUsername(false);
-      return;
-    }
-
-    if (!/^[a-z][a-z0-9_]{2,19}$/.test(clean)) {
-      setUsernameError('Only letters, numbers, and _ allowed (3-20 chars)');
-      setUsernameAvailable(false);
-      setIsCheckingUsername(false);
-      return;
-    }
-
-    setIsCheckingUsername(true);
-    setUsernameError(null);
-
-    const timer = setTimeout(() => {
-      const available = checkUsernameAvailability(clean);
-      setUsernameAvailable(available);
-      if (!available) {
-        setUsernameError('Username is already taken');
-      }
-      setIsCheckingUsername(false);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [username, mode, checkUsernameAvailability]);
-
-  // Password strength calculation
-  const calculatePasswordStrength = (pwd: string) => {
-    if (!pwd) return { score: 0, label: '', color: 'bg-slate-300 dark:bg-slate-700' };
-    let score = 0;
-    if (pwd.length >= 8) score++;
-    if (/[0-9]/.test(pwd)) score++;
-    if (/[A-Z]/.test(pwd)) score++;
-    if (/[^A-Za-z0-9]/.test(pwd)) score++;
-
-    if (score <= 1) return { score: 1, label: t.auth?.passwordStrength?.weak || 'Weak', color: 'bg-rose-500' };
-    if (score <= 3) return { score: 2, label: t.auth?.passwordStrength?.fair || 'Fair', color: 'bg-amber-500' };
-    return { score: 3, label: t.auth?.passwordStrength?.strong || 'Strong', color: 'bg-emerald-500' };
+  // Live Field Validation Errors
+  const getNameError = (): string | null => {
+    if (!nameTouched || !signUpFullName) return null;
+    const parse = nameSchema.safeParse(signUpFullName);
+    return parse.success ? null : getFirstZodError(parse.error);
   };
 
-  const strength = calculatePasswordStrength(password);
+  const getEmailError = (): string | null => {
+    if (!emailTouched || !signUpEmail) return null;
+    const parse = emailSchema.safeParse(signUpEmail);
+    return parse.success ? null : getFirstZodError(parse.error);
+  };
 
-  // Form submission with strict validation (Password-based)
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setIsLoading(true);
+  const getMobileError = (): string | null => {
+    if (!mobileTouched || !signUpMobile) return null;
+    const parse = phoneSchema.safeParse(signUpMobile);
+    return parse.success ? null : 'Please enter a valid 10-digit Indian mobile number.';
+  };
 
-    if (mode === 'signin') {
-      if (!identifier.trim()) {
-        setErrorMessage('Please enter your username, email, or mobile number.');
-        setIsLoading(false);
-        return;
-      }
-      if (!password) {
-        setErrorMessage('Please enter your password.');
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await login(identifier, password, rememberMe);
-      if (!result.success) {
-        setErrorMessage(result.error || 'Invalid credentials. Please verify your details.');
-      }
-    } else {
-      // 1. Full name validation
-      const cleanName = fullName.trim();
-      if (!cleanName || cleanName.length < 2) {
-        setErrorMessage('Full Name must be at least 2 characters long.');
-        setIsLoading(false);
-        return;
-      }
-      if (!/[a-zA-Z]/.test(cleanName) || /^\d+$/.test(cleanName)) {
-        setErrorMessage('Full Name must contain letters (e.g. "Chithanya Reddy"). Numbers-only are not allowed.');
-        setIsLoading(false);
-        return;
-      }
-
-      // 2. Username validation
-      const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
-      if (!/^[a-zA-Z][a-zA-Z0-9_]{2,19}$/.test(cleanUsername)) {
-        setErrorMessage('Username must start with a letter and contain 3 to 20 letters, numbers, or underscores.');
-        setIsLoading(false);
-        return;
-      }
-      if (usernameAvailable === false) {
-        setErrorMessage(usernameError || 'Please choose an available username.');
-        setIsLoading(false);
-        return;
-      }
-
-      // 3. Mobile Number validation
-      const cleanDigits = phoneNumber.replace(/[\s-]/g, '');
-      if (!/^\+?[0-9]{10,15}$/.test(cleanDigits)) {
-        setErrorMessage('Please enter a valid 10 to 15 digit mobile number (e.g. "+91 9876543210").');
-        setIsLoading(false);
-        return;
-      }
-
-      // 4. Password validation
-      if (!password || password.length < 6) {
-        setErrorMessage('Password must be at least 6 characters long.');
-        setIsLoading(false);
-        return;
-      }
-      if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-        setErrorMessage('Password must contain both letters and numbers for account security.');
-        setIsLoading(false);
-        return;
-      }
-
-      const result = await signup(fullName, username, phoneNumber, password, rememberMe);
-      if (!result.success) {
-        setErrorMessage(result.error || 'Failed to create account.');
-      }
+  const getConfirmPasswordError = (): string | null => {
+    if (!confirmPasswordTouched || !signUpConfirmPassword) return null;
+    if (signUpPassword !== signUpConfirmPassword) {
+      return 'Passwords do not match.';
     }
+    return null;
+  };
+
+  // ----------------------------------------------------
+  // SUBMIT: SIGN UP FLOW
+  // ----------------------------------------------------
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNameTouched(true);
+    setEmailTouched(true);
+    setMobileTouched(true);
+    setPasswordTouched(true);
+    setConfirmPasswordTouched(true);
+
+    const validation = signUpSchema.safeParse({
+      fullName: signUpFullName,
+      email: signUpEmail,
+      mobileNumber: signUpMobile,
+      password: signUpPassword,
+      confirmPassword: signUpConfirmPassword,
+      rememberMe: signUpRememberMe,
+    });
+
+    if (!validation.success) {
+      const firstError = getFirstZodError(validation.error);
+      setToast({ type: 'error', message: firstError });
+      return;
+    }
+
+    setIsLoading(true);
+    const result = await signUpWithEmail(
+      signUpFullName,
+      signUpEmail,
+      signUpMobile,
+      signUpPassword,
+      signUpRememberMe
+    );
     setIsLoading(false);
+
+    if (!result.success) {
+      setToast({
+        type: 'error',
+        message: result.error || 'Failed to create account. Please try again.',
+      });
+      return;
+    }
+
+    if (result.requiresEmailConfirmation) {
+      setToast({
+        type: 'info',
+        message: result.message || 'Account created! Please check your email to confirm your account.',
+      });
+      // Switch to sign in tab
+      setSignInEmail(signUpEmail);
+      setAuthMode('signin');
+      setSignInOption('email');
+    } else {
+      setToast({
+        type: 'success',
+        message: 'Account created and signed in successfully!',
+      });
+    }
   };
 
-  // Indian Phone + OTP: Send OTP Handler (STRICT REGISTERED NUMBER CHECK)
-  const handleSendOtp = async (e: React.FormEvent) => {
+  // ----------------------------------------------------
+  // SUBMIT: SIGN IN WITH EMAIL
+  // ----------------------------------------------------
+  const handleSignInEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    const validation = signInWithEmailSchema.safeParse({
+      email: signInEmail,
+      password: signInPassword,
+      rememberMe: signInRememberMe,
+    });
+
+    if (!validation.success) {
+      const firstError = getFirstZodError(validation.error);
+      setToast({ type: 'error', message: firstError });
+      return;
+    }
+
     setIsLoading(true);
+    const result = await loginWithEmail(signInEmail, signInPassword, signInRememberMe);
+    setIsLoading(false);
 
-    const validation = normalizeIndianPhone(otpPhone);
-    if (!validation.isValid) {
-      setErrorMessage(validation.error || 'Please enter a valid 10-digit Indian mobile number.');
-      setIsLoading(false);
-      return;
-    }
-
-    if (otpAuthMode === 'signup' && (!otpFullName.trim() || otpFullName.trim().length < 2)) {
-      setErrorMessage('Please enter your Full Name to register.');
-      setIsLoading(false);
-      return;
-    }
-
-    const result = await sendPhoneOtp(validation.formatted, otpAuthMode);
     if (!result.success) {
-      setErrorMessage(result.error || 'Failed to send OTP.');
-      setIsLoading(false);
+      setToast({
+        type: 'error',
+        message: result.error || 'Incorrect email or password. Please verify your credentials and try again.',
+      });
+    } else {
+      setToast({ type: 'success', message: 'Signed in successfully! Welcome to Gov Saathi.' });
+    }
+  };
+
+  // ----------------------------------------------------
+  // SUBMIT: SEND PHONE OTP (Real Supabase Phone Auth)
+  // ----------------------------------------------------
+  const handleSendMobileOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneProviderDisabled(false);
+
+    const normalized = normalizeIndianMobile(mobileNumber);
+    if (!normalized) {
+      setToast({
+        type: 'error',
+        message: 'Please enter a valid 10-digit Indian mobile number (+91).',
+      });
       return;
     }
 
-    if (result.registeredUser) {
-      setRegisteredAccountInfo(
-        `${result.registeredUser.fullName} (@${result.registeredUser.username || 'user'})`
-      );
-    } else {
-      setRegisteredAccountInfo(null);
+    setIsLoading(true);
+    const result = await sendSupabasePhoneOtp(normalized);
+    setIsLoading(false);
+
+    if (!result.success) {
+      if (result.providerDisabled) {
+        setPhoneProviderDisabled(true);
+        setToast({
+          type: 'error',
+          message: 'Supabase Phone provider is not enabled in this project.',
+        });
+      } else {
+        setToast({
+          type: 'error',
+          message: result.error || 'Failed to send OTP verification code.',
+        });
+      }
+      return;
     }
 
-    setActiveFormattedPhone(result.formattedPhone || validation.formatted);
-    setSimulatedOtp(result.otp || null);
+    // Success with real Supabase Phone Auth: OTP sent via SMS to the mobile number
+    setToast({
+      type: 'success',
+      message: `A 6-digit OTP verification code has been dispatched via SMS to ${normalized}.`,
+    });
     setOtpStep('verify');
     setOtpTimer(30);
     setIsResendDisabled(true);
     setOtpDigits(['', '', '', '', '', '']);
-    setIsLoading(false);
 
-    // Focus first OTP input box on step change
     setTimeout(() => {
       otpInputRefs.current[0]?.focus();
     }, 150);
   };
 
-  // Indian Phone + OTP: Verify OTP Handler
-  const handleVerifyOtp = async (e?: React.FormEvent) => {
+  // ----------------------------------------------------
+  // SUBMIT: VERIFY PHONE OTP (Real Supabase Phone Auth)
+  // ----------------------------------------------------
+  const handleVerifyMobileOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    setErrorMessage(null);
     const code = otpDigits.join('');
 
     if (code.length !== 6) {
-      setErrorMessage('Please enter the complete 6-digit OTP verification code.');
+      setToast({
+        type: 'error',
+        message: 'Please enter the complete 6-digit verification code.',
+      });
+      return;
+    }
+
+    const normalized = normalizeIndianMobile(mobileNumber);
+    if (!normalized) {
+      setToast({ type: 'error', message: 'Invalid mobile number.' });
       return;
     }
 
     setIsLoading(true);
-    const result = await verifyPhoneOtp(activeFormattedPhone, code, otpFullName, rememberMe, otpAuthMode);
+    const result = await verifySupabasePhoneOtp(normalized, code, signInRememberMe);
+    setIsLoading(false);
+
     if (!result.success) {
-      setErrorMessage(result.error || 'Verification failed. Please check the OTP code.');
-      setIsLoading(false);
+      if (result.providerDisabled) {
+        setPhoneProviderDisabled(true);
+        setToast({
+          type: 'error',
+          message: 'Phone provider is not configured in Supabase.',
+        });
+      } else {
+        setToast({
+          type: 'error',
+          message: result.error || 'Incorrect OTP code. Please check and try again.',
+        });
+      }
       return;
     }
 
-    setIsLoading(false);
+    setToast({
+      type: 'success',
+      message: 'Mobile number verified successfully! Welcome to Gov Saathi.',
+    });
   };
 
-  // OTP Input Box change handler (auto-forwarding)
+  // OTP Digits Handling (auto-advance & backspace)
   const handleOtpDigitChange = (index: number, value: string) => {
     if (value.length > 1) {
-      const pastedDigits = value.replace(/\D/g, '').slice(0, 6).split('');
+      const pasted = value.replace(/\D/g, '').slice(0, 6).split('');
       const updated = [...otpDigits];
-      pastedDigits.forEach((digit, i) => {
-        if (i < 6) updated[i] = digit;
+      pasted.forEach((d, i) => {
+        if (i < 6) updated[i] = d;
       });
       setOtpDigits(updated);
-      const nextIndex = Math.min(pastedDigits.length, 5);
+      const nextIndex = Math.min(pasted.length, 5);
       otpInputRefs.current[nextIndex]?.focus();
       return;
     }
@@ -351,137 +412,203 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  // OTP input backspace handler
   const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
       otpInputRefs.current[index - 1]?.focus();
     }
   };
 
-  // 1-Click Auto-Fill of OTP
-  const handleAutoFillOtp = (otp: string) => {
-    const chars = otp.split('').slice(0, 6);
-    setOtpDigits(chars);
-    otpInputRefs.current[5]?.focus();
-  };
-
   // Resend OTP
   const handleResendOtp = async () => {
     if (isResendDisabled) return;
-    setErrorMessage(null);
-    setIsLoading(true);
+    const normalized = normalizeIndianMobile(mobileNumber);
+    if (!normalized) return;
 
-    const result = await sendPhoneOtp(activeFormattedPhone, otpAuthMode);
+    setIsLoading(true);
+    const result = await sendSupabasePhoneOtp(normalized);
     setIsLoading(false);
 
     if (result.success) {
-      setSimulatedOtp(result.otp || null);
       setOtpTimer(30);
       setIsResendDisabled(true);
-      setSuccessMessage('A fresh 6-digit OTP code has been dispatched.');
-      setTimeout(() => setSuccessMessage(null), 4000);
+      setToast({
+        type: 'success',
+        message: 'A fresh 6-digit OTP code has been dispatched via SMS.',
+      });
     } else {
-      setErrorMessage(result.error || 'Failed to resend OTP.');
+      if (result.providerDisabled) {
+        setPhoneProviderDisabled(true);
+      }
+      setToast({
+        type: 'error',
+        message: result.error || 'Failed to resend verification code.',
+      });
     }
   };
 
-  // Google Sign-In Executor
-  const handleGoogleSignIn = async (profile?: GoogleAuthProfile) => {
-    setShowGoogleModal(false);
-    setErrorMessage(null);
-    setIsLoading(true);
+  // Forgot Password Handler
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      setToast({ type: 'error', message: 'Please enter your email address.' });
+      return;
+    }
+    setIsForgotLoading(true);
+    const res = await sendPasswordResetEmail(forgotEmail);
+    setIsForgotLoading(false);
+
+    if (res.success) {
+      setForgotStatus(res.message);
+    } else {
+      setToast({ type: 'error', message: res.error || res.message });
+    }
+  };
+
+  // Google Account Selection Handler
+  const handleSelectGoogleAccount = (profile: GoogleAuthProfile) => {
+    setSelectedGoogleAccount(profile);
+    setGooglePassword('');
+    setGoogleError(null);
+    setGoogleStep('password');
+  };
+
+  // Google Password Authentication Submit Handler
+  const handleGooglePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGoogleAccount) return;
+    if (!googlePassword.trim()) {
+      setGoogleError('Please enter your password to continue.');
+      return;
+    }
+
+    setGoogleError(null);
     setIsGoogleLoading(true);
 
-    const result = await loginWithGoogle(profile, rememberMe);
-    setIsLoading(false);
+    const result = await loginWithGoogle(selectedGoogleAccount, googlePassword, signInRememberMe);
     setIsGoogleLoading(false);
 
     if (!result.success) {
-      setErrorMessage(result.error || 'Failed to sign in with Google.');
+      setGoogleError(result.error || 'Incorrect password for this Google account. Please verify your credentials and try again.');
+    } else {
+      setShowGoogleModal(false);
+      setGoogleStep('choose');
+      setSelectedGoogleAccount(null);
+      setGooglePassword('');
+      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to Gov Saathi.' });
     }
   };
 
+  // Close Google Modal Handler
+  const handleCloseGoogleModal = () => {
+    setShowGoogleModal(false);
+    setGoogleStep('choose');
+    setSelectedGoogleAccount(null);
+    setGooglePassword('');
+    setGoogleError(null);
+  };
+
+  // Quick Demo Login Handler
   const handleQuickDemoLogin = async () => {
-    setErrorMessage(null);
     setIsLoading(true);
-    await login('chithanya', 'Password@123', rememberMe);
+    const result = await login('chithanya', 'Password@123', true);
     setIsLoading(false);
+    if (result.success) {
+      setToast({ type: 'success', message: 'Welcome to Gov Saathi Demo!' });
+    } else {
+      setToast({ type: 'error', message: result.error || 'Demo login failed.' });
+    }
   };
 
   const handleSwitchAccount = () => {
     clearRememberedCustomer();
-    setIdentifier('');
-    setPassword('');
-    setOtpPhone('');
-    setErrorMessage(null);
+    setSignInEmail('');
+    setSignInPassword('');
+    setMobileNumber('');
+    setToast(null);
   };
 
-  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!forgotIdentifier.trim()) return;
-    const res = await resetPassword(forgotIdentifier);
-    setForgotStatus(res.message);
-  };
-
-  // Live validation helpers
-  const isNameInvalid =
-    fullName.trim().length > 0 &&
-    (!/[a-zA-Z]/.test(fullName) || /^\d+$/.test(fullName) || fullName.trim().length < 2);
-
-  const cleanPhoneDigits = phoneNumber.replace(/[\s-]/g, '');
-  const isPhoneInvalid =
-    phoneNumber.trim().length > 0 &&
-    (!/^\+?[0-9]{10,15}$/.test(cleanPhoneDigits));
-
-  const isOtpPhoneInvalid =
-    otpPhone.trim().length > 0 &&
-    !normalizeIndianPhone(otpPhone).isValid;
+  const nameError = getNameError();
+  const emailError = getEmailError();
+  const mobileError = getMobileError();
+  const confirmPasswordError = getConfirmPasswordError();
 
   return (
-    <div className="w-full max-w-lg mx-auto my-auto p-4 sm:p-6 space-y-6 animate-in fade-in duration-300">
-      {/* Brand Hero Header */}
-      <div className="text-center space-y-2.5">
-        <div className="inline-flex relative items-center justify-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center font-black text-white text-2xl shadow-xl shadow-indigo-500/25 ring-4 ring-indigo-500/10">
-            SW
+    <div className="w-full max-w-lg mx-auto my-auto p-4 sm:p-6 space-y-5 animate-in fade-in duration-300">
+      {/* ========================================================= */}
+      {/* FLOATING POPUP / TOAST NOTIFICATION                       */}
+      {/* ========================================================= */}
+      {toast && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className={`fixed top-5 right-5 z-50 max-w-md p-4 rounded-2xl shadow-2xl border flex items-start gap-3 backdrop-blur-md animate-in slide-in-from-top-4 transition-all ${
+            toast.type === 'error'
+              ? 'bg-rose-50/95 dark:bg-rose-950/95 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              : toast.type === 'success'
+              ? 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : 'bg-indigo-50/95 dark:bg-indigo-950/95 border-indigo-300 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200'
+          }`}
+        >
+          {toast.type === 'error' && <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 dark:text-rose-400 mt-0.5" />}
+          {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />}
+          {toast.type === 'info' && <Info className="w-5 h-5 flex-shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />}
+
+          <div className="flex-1 text-xs font-semibold leading-relaxed">
+            {toast.message}
           </div>
-          <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
+
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+            title="Dismiss notification"
+          >
+            <X className="w-4 h-4 opacity-70 hover:opacity-100" />
+          </button>
+        </div>
+      )}
+
+      {/* Brand Hero Header */}
+      <div className="text-center space-y-2">
+        <div className="inline-flex relative items-center justify-center">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center font-black text-white text-xl shadow-xl shadow-indigo-500/25 ring-4 ring-indigo-500/10">
+            GS
+          </div>
+          <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
           </span>
         </div>
 
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            {t.appName}
+            Gov Saathi
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto mt-1 font-medium">
-            {t.tagline}
+            Smart Government Services & Financial Intelligence Platform
           </p>
         </div>
 
         {/* Live Cloud Connection Status Pill */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 text-[11px] text-slate-600 dark:text-slate-300">
+        <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 text-[11px] text-slate-600 dark:text-slate-300">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span>Supabase PostgreSQL & Gemini 1.5 Active</span>
+          <span>Supabase PostgreSQL Auth Active</span>
         </div>
       </div>
 
       {/* Main Authentication Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 dark:shadow-none space-y-5 transition-all">
-        {/* Remembered Customer Welcome Card */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 dark:shadow-none space-y-5 transition-all text-left">
+        {/* Remembered Customer Welcome Banner */}
         {rememberedCustomer && (
-          <div className="bg-gradient-to-r from-indigo-50 via-violet-50 to-indigo-50/50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/60 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="bg-gradient-to-r from-indigo-50 via-violet-50 to-indigo-50/50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/60 rounded-2xl p-3.5 flex items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-bold flex items-center justify-center text-sm shadow-md shadow-indigo-500/20 flex-shrink-0">
-                {rememberedCustomer.fullName
-                  ? rememberedCustomer.fullName.charAt(0).toUpperCase()
-                  : 'C'}
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-bold flex items-center justify-center text-xs shadow-md shadow-indigo-500/20 flex-shrink-0">
+                {rememberedCustomer.fullName ? rememberedCustomer.fullName.charAt(0).toUpperCase() : 'G'}
               </div>
-              <div className="min-w-0 text-left">
+              <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                    {t.auth?.welcomeBackCustomer || 'Welcome back'}, {rememberedCustomer.fullName || rememberedCustomer.identifier}!
+                    Welcome back, {rememberedCustomer.fullName || rememberedCustomer.identifier}!
                   </span>
                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                     <BookmarkCheck className="w-2.5 h-2.5" />
@@ -494,20 +621,672 @@ export const LoginScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                type="button"
-                onClick={handleSwitchAccount}
-                className="px-2.5 py-1 text-[11px] text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 hover:underline transition-colors font-medium"
-                title={t.auth?.clearRemembered || 'Clear saved details on this device'}
-              >
-                {t.auth?.switchAccount || 'Switch'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleSwitchAccount}
+              className="px-2.5 py-1 text-[11px] text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 hover:underline transition-colors font-medium flex-shrink-0"
+              title="Clear saved details on this device"
+            >
+              Switch
+            </button>
           </div>
         )}
 
-        {/* 1. Google One-Tap / OAuth Sign In Button */}
+        {/* ========================================================= */}
+        {/* TWO CLEAR MODES: SIGN IN vs SIGN UP                       */}
+        {/* ========================================================= */}
+        <div className="grid grid-cols-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('signin');
+              setToast(null);
+            }}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              authMode === 'signin'
+                ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>SIGN IN</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode('signup');
+              setToast(null);
+            }}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              authMode === 'signup'
+                ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>SIGN UP</span>
+          </button>
+        </div>
+
+        {/* ========================================================= */}
+        {/* MODE 1: SIGN IN                                           */}
+        {/* ========================================================= */}
+        {authMode === 'signin' && (
+          <div className="space-y-4 animate-in fade-in">
+            {/* Sign In Options Switcher: Email vs Mobile Number */}
+            <div className="grid grid-cols-2 p-1 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800/80 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => {
+                  setSignInOption('email');
+                  setPhoneProviderDisabled(false);
+                }}
+                className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  signInOption === 'email'
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-bold'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Continue with Email</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSignInOption('mobile');
+                  setOtpStep('input');
+                  setPhoneProviderDisabled(false);
+                }}
+                className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                  signInOption === 'mobile'
+                    ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>Continue with Mobile</span>
+              </button>
+            </div>
+
+            {/* OPTION 1: CONTINUE WITH EMAIL */}
+            {signInOption === 'email' && (
+              <form onSubmit={handleSignInEmailSubmit} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Email Address <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type="email"
+                      required
+                      autoComplete="email"
+                      placeholder="name@example.com"
+                      value={signInEmail}
+                      onChange={(e) => setSignInEmail(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Password <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowForgotModal(true);
+                        setForgotEmail(signInEmail);
+                        setForgotStatus(null);
+                      }}
+                      className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div className="relative flex items-center">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type={showSignInPassword ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={signInPassword}
+                      onChange={(e) => setSignInPassword(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignInPassword(!showSignInPassword)}
+                      className="absolute right-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title={showSignInPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Remember Me */}
+                <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={signInRememberMe}
+                      onChange={(e) => setSignInRememberMe(e.target.checked)}
+                      className="w-4 h-4 mt-0.5 rounded text-indigo-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                        <span>Remember my login details on this device</span>
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Sign In Button */}
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Authenticating with Supabase...</span>
+                    </span>
+                  ) : (
+                    <>
+                      <span>Sign In with Email</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+
+            {/* OPTION 2: CONTINUE WITH MOBILE NUMBER (Real Supabase Phone Auth) */}
+            {signInOption === 'mobile' && (
+              <div className="space-y-3.5">
+                {otpStep === 'input' ? (
+                  <form onSubmit={handleSendMobileOtp} className="space-y-3.5">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                        <span>Mobile Number (+91)</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                          Indian Mobile Standard
+                        </span>
+                      </label>
+                      <div className="relative flex items-center">
+                        <div className="absolute left-3 flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 select-none">
+                          <span className="text-sm">🇮🇳</span>
+                          <span>+91</span>
+                        </div>
+                        <input
+                          type="tel"
+                          required
+                          autoComplete="tel"
+                          placeholder="90635 34530"
+                          value={mobileNumber}
+                          onChange={(e) => {
+                            const filtered = e.target.value.replace(/[^0-9\s]/g, '');
+                            setMobileNumber(filtered);
+                          }}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-20 pr-3.5 py-2.5 text-xs sm:text-sm font-semibold tracking-wider text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Format: <strong className="text-emerald-600 dark:text-emerald-400">+91 XXXXX XXXXX</strong> (10 digits starting with 6, 7, 8, or 9)
+                      </p>
+                    </div>
+
+                    {/* Supabase Phone Provider Not Configured Alert Block */}
+                    {phoneProviderDisabled && (
+                      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-3 animate-in fade-in">
+                        <div className="flex items-start gap-2.5">
+                          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                              Supabase Phone Provider Not Configured
+                            </h4>
+                            <p className="text-[11px] leading-relaxed">
+                              Real Supabase Phone OTP requires enabling an SMS provider in your Supabase project settings.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Strict Action Required Format */}
+                        <div className="bg-white/80 dark:bg-slate-900/90 rounded-xl p-3 border border-amber-500/20 text-[11px] font-mono space-y-1 text-slate-800 dark:text-slate-200">
+                          <p className="font-bold text-amber-600 dark:text-amber-400 font-sans">
+                            ACTION REQUIRED FROM YOU:
+                          </p>
+                          <ol className="list-decimal list-inside space-y-0.5 text-left font-sans">
+                            <li>Go to the Supabase Dashboard</li>
+                            <li>Open your project settings -&gt; Authentication -&gt; Providers -&gt; Phone</li>
+                            <li>Enable Phone provider</li>
+                            <li>Choose your SMS provider (such as Twilio or MessageBird)</li>
+                            <li>Enter your Account SID, Auth Token, and Sender Phone Number / Service SID</li>
+                            <li>Save changes</li>
+                          </ol>
+                          <p className="text-[10px] text-slate-500 pt-1 font-sans">
+                            Once you complete this, mobile OTP sign-in will work automatically.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Remember Me */}
+                    <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={signInRememberMe}
+                          onChange={(e) => setSignInRememberMe(e.target.checked)}
+                          className="w-4 h-4 mt-0.5 rounded text-emerald-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            <span>Remember my mobile details on this device</span>
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+
+                    {/* Send OTP button */}
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Requesting OTP from Supabase...</span>
+                        </span>
+                      ) : (
+                        <>
+                          <Smartphone className="w-4 h-4" />
+                          <span>Send OTP to Mobile</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                ) : (
+                  /* OTP Verification Screen (Real Supabase Phone Auth) */
+                  <div className="space-y-4 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOtpStep('input');
+                          setPhoneProviderDisabled(false);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-emerald-600 font-semibold transition-colors"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Change Number</span>
+                      </button>
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        SMS Dispatched
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        Enter 6-Digit OTP Code
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Enter the verification code sent via SMS to{' '}
+                        <strong className="text-slate-800 dark:text-slate-200">
+                          {formatIndianMobileDisplay(mobileNumber)}
+                        </strong>
+                      </p>
+                    </div>
+
+                    {/* 6 Digit Input Boxes */}
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-6 gap-2 sm:gap-3">
+                        {otpDigits.map((digit, index) => (
+                          <input
+                            key={index}
+                            ref={(el) => (otpInputRefs.current[index] = el)}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handleOtpDigitChange(index, e.target.value)}
+                            onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                            className="w-full h-12 text-center text-lg font-bold font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-inner"
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Resend Timer & Button */}
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                        Didn't receive the SMS code?
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isResendDisabled || isLoading}
+                        onClick={handleResendOtp}
+                        className={`font-semibold text-[11px] transition-colors ${
+                          isResendDisabled
+                            ? 'text-slate-400 cursor-not-allowed'
+                            : 'text-indigo-600 dark:text-indigo-400 hover:underline'
+                        }`}
+                      >
+                        {isResendDisabled ? `Resend OTP in ${otpTimer}s` : 'Resend OTP'}
+                      </button>
+                    </div>
+
+                    {/* Verify Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleVerifyMobileOtp()}
+                      disabled={isLoading || otpDigits.join('').length !== 6}
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Verifying OTP with Supabase...</span>
+                        </span>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Verify & Proceed</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* MODE 2: SIGN UP                                           */}
+        {/* ========================================================= */}
+        {authMode === 'signup' && (
+          <form onSubmit={handleSignUpSubmit} className="space-y-3.5 animate-in fade-in">
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Create your Gov Saathi Account</span>
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Register with your full name, email, Indian mobile number, and password.
+              </p>
+            </div>
+
+            {/* 1. Full Name */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Full Name <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Chithanya Reddy"
+                  value={signUpFullName}
+                  onBlur={() => setNameTouched(true)}
+                  onChange={(e) => {
+                    setSignUpFullName(e.target.value);
+                    if (!nameTouched) setNameTouched(true);
+                  }}
+                  className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                    nameError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                  }`}
+                />
+              </div>
+              {nameError && (
+                <p className="text-[11px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{nameError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* 2. Email Address */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Email Address <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={signUpEmail}
+                  onBlur={() => setEmailTouched(true)}
+                  onChange={(e) => {
+                    setSignUpEmail(e.target.value);
+                    if (!emailTouched) setEmailTouched(true);
+                  }}
+                  className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                    emailError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                  }`}
+                />
+              </div>
+              {emailError && (
+                <p className="text-[11px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{emailError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* 3. Mobile Number */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Mobile Number (+91) <span className="text-rose-500">*</span></span>
+                <span className="text-[10px] text-slate-500">Indian format</span>
+              </label>
+              <div className="relative flex items-center">
+                <div className="absolute left-3 flex items-center gap-1 text-xs font-bold text-slate-600 dark:text-slate-300 select-none pointer-events-none">
+                  <span>🇮🇳</span>
+                  <span>+91</span>
+                </div>
+                <input
+                  type="tel"
+                  required
+                  placeholder="90635 34530"
+                  value={signUpMobile}
+                  onBlur={() => setMobileTouched(true)}
+                  onChange={(e) => {
+                    const filtered = e.target.value.replace(/[^0-9+\s-]/g, '');
+                    setSignUpMobile(filtered);
+                    if (!mobileTouched) setMobileTouched(true);
+                  }}
+                  className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-16 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                    mobileError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                  }`}
+                />
+              </div>
+              {mobileError && (
+                <p className="text-[11px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{mobileError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* 4. Password + Live Requirements Checklist */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Password <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type={showSignUpPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Create a strong password"
+                  value={signUpPassword}
+                  onBlur={() => setPasswordTouched(true)}
+                  onChange={(e) => {
+                    setSignUpPassword(e.target.value);
+                    if (!passwordTouched) setPasswordTouched(true);
+                  }}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                  className="absolute right-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title={showSignUpPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showSignUpPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* LIVE PASSWORD REQUIREMENTS CHECKLIST */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 mt-2">
+                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Password Requirements:
+                </span>
+                <ul className="space-y-1 text-xs font-medium">
+                  <li className={`flex items-center gap-2 ${pwdChecklist.minLength ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {pwdChecklist.minLength ? <Check className="w-3.5 h-3.5 text-emerald-500 font-bold" /> : <span className="w-3.5 text-center text-slate-400">•</span>}
+                    <span>At least 8 characters</span>
+                  </li>
+                  <li className={`flex items-center gap-2 ${pwdChecklist.hasUppercase ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {pwdChecklist.hasUppercase ? <Check className="w-3.5 h-3.5 text-emerald-500 font-bold" /> : <span className="w-3.5 text-center text-slate-400">•</span>}
+                    <span>One uppercase letter</span>
+                  </li>
+                  <li className={`flex items-center gap-2 ${pwdChecklist.hasLowercase ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {pwdChecklist.hasLowercase ? <Check className="w-3.5 h-3.5 text-emerald-500 font-bold" /> : <span className="w-3.5 text-center text-slate-400">•</span>}
+                    <span>One lowercase letter</span>
+                  </li>
+                  <li className={`flex items-center gap-2 ${pwdChecklist.hasNumber ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {pwdChecklist.hasNumber ? <Check className="w-3.5 h-3.5 text-emerald-500 font-bold" /> : <span className="w-3.5 text-center text-slate-400">•</span>}
+                    <span>One number</span>
+                  </li>
+                  <li className={`flex items-center gap-2 ${pwdChecklist.hasSpecialChar ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                    {pwdChecklist.hasSpecialChar ? <Check className="w-3.5 h-3.5 text-emerald-500 font-bold" /> : <span className="w-3.5 text-center text-slate-400">•</span>}
+                    <span>One special character (e.g. !@#$%^&*)</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* 5. Confirm Password */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Confirm Password <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                <input
+                  type={showSignUpConfirmPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Re-enter your password"
+                  value={signUpConfirmPassword}
+                  onBlur={() => setConfirmPasswordTouched(true)}
+                  onChange={(e) => {
+                    setSignUpConfirmPassword(e.target.value);
+                    if (!confirmPasswordTouched) setConfirmPasswordTouched(true);
+                  }}
+                  className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                    confirmPasswordError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20'
+                      : signUpConfirmPassword && signUpPassword === signUpConfirmPassword
+                      ? 'border-emerald-500 focus:border-emerald-500 ring-2 ring-emerald-500/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSignUpConfirmPassword(!showSignUpConfirmPassword)}
+                  className="absolute right-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title={showSignUpConfirmPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showSignUpConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Confirm Password Status Indicator */}
+              {confirmPasswordError && (
+                <p className="text-[11px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{confirmPasswordError}</span>
+                </p>
+              )}
+              {!confirmPasswordError && signUpConfirmPassword.length > 0 && signUpPassword === signUpConfirmPassword && (
+                <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>Passwords match</span>
+                </p>
+              )}
+            </div>
+
+            {/* Remember Me */}
+            <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={signUpRememberMe}
+                  onChange={(e) => setSignUpRememberMe(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded text-indigo-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                />
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                    <span>Remember my registration details on this device</span>
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {/* Submit Sign Up Button */}
+            <button
+              type="submit"
+              disabled={isLoading || !pwdChecklist.isAllMet || signUpPassword !== signUpConfirmPassword}
+              className="w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+            >
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Creating Account with Supabase...</span>
+                </span>
+              ) : (
+                <>
+                  <span>Create Account</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {/* Divider */}
+        <div className="relative flex py-1 items-center">
+          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+          <span className="flex-shrink mx-3 text-[10px] text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider font-semibold">
+            Or continue with
+          </span>
+          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+        </div>
+
+        {/* Google Sign In Button */}
         <div>
           <button
             type="button"
@@ -515,7 +1294,6 @@ export const LoginScreen: React.FC = () => {
             disabled={isLoading || isGoogleLoading}
             className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-xs sm:text-sm shadow-sm hover:shadow transition-all active:scale-[0.99] disabled:opacity-50"
           >
-            {/* Crisp Official Google Multi-color G SVG */}
             <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
@@ -538,706 +1316,17 @@ export const LoginScreen: React.FC = () => {
           </button>
         </div>
 
-        {/* Divider */}
-        <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-          <span className="flex-shrink mx-3 text-[10px] text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider font-semibold">
-            Or choose method
-          </span>
-          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-        </div>
-
-        {/* Authentication Method Selector (Password vs India Phone & OTP) */}
-        <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700/80 text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMethod('phone_otp');
-              setErrorMessage(null);
-              setOtpStep('input');
-            }}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
-              authMethod === 'phone_otp'
-                ? 'bg-white dark:bg-emerald-600 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <span className="text-sm">🇮🇳</span>
-            <span>Phone OTP (+91)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMethod('password');
-              setErrorMessage(null);
-            }}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
-              authMethod === 'password'
-                ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Password / Handle</span>
-          </button>
-        </div>
-
-        {/* Error Alert with Smart Switch action */}
-        {errorMessage && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 space-y-2 text-xs text-rose-600 dark:text-rose-400 animate-in fade-in text-left">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span className="font-medium">{errorMessage}</span>
-            </div>
-            {/* If unregistered in OTP signin, offer 1-click register */}
-            {authMethod === 'phone_otp' && otpAuthMode === 'signin' && errorMessage.includes('not registered') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOtpAuthMode('signup');
-                  setErrorMessage(null);
-                }}
-                className="ml-6 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] shadow-xs flex items-center gap-1 transition-colors"
-              >
-                <span>Register this mobile number now</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {successMessage && (
-          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-2.5 text-xs text-emerald-600 dark:text-emerald-400 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span className="font-medium text-left">{successMessage}</span>
-          </div>
-        )}
-
-        {/* ========================================================= */}
-        {/* TAB 1: INDIAN PHONE NUMBER & OTP VERIFICATION            */}
-        {/* ========================================================= */}
-        {authMethod === 'phone_otp' && (
-          <div className="space-y-4">
-            {otpStep === 'input' ? (
-              <div className="space-y-3.5">
-                {/* Sign In vs Register Mobile Toggle */}
-                <div className="grid grid-cols-2 p-1 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800/80 text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOtpAuthMode('signin');
-                      setErrorMessage(null);
-                    }}
-                    className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                      otpAuthMode === 'signin'
-                        ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Registered Sign In</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOtpAuthMode('signup');
-                      setErrorMessage(null);
-                    }}
-                    className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                      otpAuthMode === 'signup'
-                        ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
-                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span>Register New Mobile</span>
-                  </button>
-                </div>
-
-                <form onSubmit={handleSendOtp} className="space-y-3.5 text-left">
-                  <div className="space-y-0.5">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-emerald-500" />
-                      <span>
-                        {otpAuthMode === 'signin'
-                          ? 'Sign In to Registered Mobile Number'
-                          : 'Register Your Mobile Number'}
-                      </span>
-                    </h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {otpAuthMode === 'signin'
-                        ? 'OTP is sent exclusively to your registered mobile number (+91).'
-                        : 'Enter your name and mobile number to verify and create your account.'}
-                    </p>
-                  </div>
-
-                  {/* Full Name (Only when Registering New Mobile) */}
-                  {otpAuthMode === 'signup' && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Full Name <span className="text-rose-500">*</span>
-                      </label>
-                      <div className="relative flex items-center">
-                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Chithanya Reddy"
-                          value={otpFullName}
-                          onChange={(e) => {
-                            setOtpFullName(e.target.value);
-                            if (errorMessage) setErrorMessage(null);
-                          }}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Registered Indian Mobile Number Input */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                      <span>
-                        {otpAuthMode === 'signin'
-                          ? 'Registered Indian Mobile Number'
-                          : 'Indian Mobile Number'}
-                      </span>
-                      {otpAuthMode === 'signin' && (
-                        <span className="text-[10px] text-emerald-500 font-semibold">
-                          Registered accounts only
-                        </span>
-                      )}
-                    </label>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 select-none">
-                        <span className="text-sm">🇮🇳</span>
-                        <span>+91</span>
-                      </div>
-                      <input
-                        type="tel"
-                        required
-                        autoFocus
-                        placeholder="90635 34530"
-                        value={otpPhone}
-                        onChange={(e) => {
-                          const filtered = e.target.value.replace(/[^0-9\s]/g, '');
-                          setOtpPhone(filtered);
-                          if (errorMessage) setErrorMessage(null);
-                        }}
-                        className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-20 pr-3.5 py-2.5 text-xs sm:text-sm font-semibold tracking-wider text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
-                          isOtpPhoneInvalid
-                            ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
-                            : 'border-slate-300 dark:border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
-                        }`}
-                      />
-                    </div>
-                    {isOtpPhoneInvalid ? (
-                      <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
-                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                        <span>Indian numbers must be 10 digits starting with 6, 7, 8, or 9.</span>
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-slate-400">
-                        Enter 10-digit number. Example: <strong className="text-emerald-500">90635 34530</strong>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Remember Me */}
-                  <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
-                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="w-4 h-4 mt-0.5 rounded text-emerald-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
-                      />
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                          <span>Remember my mobile details on this device</span>
-                        </span>
-                      </div>
-                    </label>
-                  </div>
-
-                  {/* Send OTP button */}
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      <span className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Checking registered number...</span>
-                      </span>
-                    ) : (
-                      <>
-                        <MessageSquare className="w-4 h-4" />
-                        <span>
-                          {otpAuthMode === 'signin'
-                            ? 'Send OTP to Registered Mobile'
-                            : 'Verify & Register Mobile Number'}
-                        </span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-            ) : (
-              /* OTP Verification Step */
-              <div className="space-y-4 text-left animate-in fade-in slide-in-from-right-2">
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOtpStep('input');
-                      setErrorMessage(null);
-                    }}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-emerald-600 font-semibold transition-colors"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Change Number</span>
-                  </button>
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                    OTP Dispatched
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    {otpAuthMode === 'signin'
-                      ? 'Verify Registered Mobile Number'
-                      : 'Complete Mobile Registration'}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Enter the 6-digit verification code sent to registered number{' '}
-                    <strong className="text-slate-800 dark:text-slate-200">
-                      {activeFormattedPhone}
-                    </strong>
-                  </p>
-                  {registeredAccountInfo && (
-                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                      <UserCheck className="w-3 h-3 text-emerald-500" />
-                      <span>Account: {registeredAccountInfo}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Real SMS Sent Notice Card */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <MessageSquare className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs font-bold text-slate-900 dark:text-white">
-                          SMS Sent to Mobile Messages
-                        </p>
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                        A 6-digit verification code has been dispatched to your phone's SMS messages inbox at{' '}
-                        <strong className="text-slate-800 dark:text-slate-200">{activeFormattedPhone}</strong>.
-                        Please check your Messages app.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 6 Individual Digit Input Boxes */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    6-Digit Verification Code <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-6 gap-2 sm:gap-3">
-                    {otpDigits.map((digit, index) => (
-                      <input
-                        key={index}
-                        ref={(el) => (otpInputRefs.current[index] = el)}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpDigitChange(index, e.target.value)}
-                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-full h-12 text-center text-lg font-bold font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-inner"
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Resend Timer & Button */}
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                    Didn't receive the SMS?
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isResendDisabled || isLoading}
-                    onClick={handleResendOtp}
-                    className={`font-semibold text-[11px] transition-colors ${
-                      isResendDisabled
-                        ? 'text-slate-400 cursor-not-allowed'
-                        : 'text-indigo-600 dark:text-indigo-400 hover:underline'
-                    }`}
-                  >
-                    {isResendDisabled ? `Resend OTP in ${otpTimer}s` : 'Resend OTP'}
-                  </button>
-                </div>
-
-                {/* Verify OTP Button */}
-                <button
-                  type="button"
-                  onClick={() => handleVerifyOtp()}
-                  disabled={isLoading || otpDigits.join('').length !== 6}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Verifying code...</span>
-                    </span>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Verify & Proceed to Dashboard</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================= */}
-        {/* TAB 2: PASSWORD AUTHENTICATION (Sign In / Sign Up)       */}
-        {/* ========================================================= */}
-        {authMethod === 'password' && (
-          <div className="space-y-4">
-            {/* Sign In / Sign Up Segmented Control */}
-            <div className="grid grid-cols-2 p-1 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800/80 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setErrorMessage(null);
-                }}
-                className={`py-1.5 rounded-lg transition-all ${
-                  mode === 'signin'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {t.auth.signInButton}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setErrorMessage(null);
-                }}
-                className={`py-1.5 rounded-lg transition-all ${
-                  mode === 'signup'
-                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs font-bold'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {t.auth.signUpButton}
-              </button>
-            </div>
-
-            {/* Section Heading */}
-            <div className="space-y-0.5 text-left">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>{mode === 'signin' ? t.auth.welcomeBack : t.auth.createAccount}</span>
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {mode === 'signin'
-                  ? 'Sign in with your @username, Indian phone number, or email.'
-                  : t.auth.signUpSubtitle}
-              </p>
-            </div>
-
-            {/* Credentials Form */}
-            <form onSubmit={handleSubmit} className="space-y-3.5">
-              {mode === 'signup' && (
-                <>
-                  {/* Full Name */}
-                  <div className="space-y-1 text-left">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {t.auth.fullNameLabel} <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative flex items-center">
-                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Chithanya Reddy"
-                        value={fullName}
-                        onChange={(e) => {
-                          setFullName(e.target.value);
-                          if (errorMessage) setErrorMessage(null);
-                        }}
-                        className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
-                          isNameInvalid
-                            ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
-                            : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
-                        }`}
-                      />
-                    </div>
-                    {isNameInvalid && (
-                      <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
-                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                        <span>Full Name must contain letters (numbers only not allowed).</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Username with Real-Time Availability Check */}
-                  <div className="space-y-1 text-left">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        {t.auth.usernameLabel} <span className="text-rose-500">*</span>
-                      </label>
-                      {isCheckingUsername && (
-                        <span className="text-[10px] text-indigo-500 animate-pulse">
-                          Checking availability...
-                        </span>
-                      )}
-                      {!isCheckingUsername && usernameAvailable === true && (
-                        <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Username is available
-                        </span>
-                      )}
-                      {!isCheckingUsername && usernameAvailable === false && (
-                        <span className="text-[10px] text-rose-500 font-medium flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          {usernameError || 'Invalid username'}
-                        </span>
-                      )}
-                    </div>
-                    <div className="relative flex items-center">
-                      <AtSign className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. chithanya_01"
-                        value={username}
-                        onChange={(e) => {
-                          setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''));
-                          if (errorMessage) setErrorMessage(null);
-                        }}
-                        className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
-                          usernameAvailable === false
-                            ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
-                            : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
-                        }`}
-                      />
-                    </div>
-                    <p className="text-[10px] text-slate-400">
-                      Must start with a letter (a-z), 3–20 alphanumeric or underscore characters.
-                    </p>
-                  </div>
-
-                  {/* Phone Number with India (+91) Badge */}
-                  <div className="space-y-1 text-left">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {t.auth.phoneLabel} <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative flex items-center">
-                      <div className="absolute left-3 flex items-center gap-1 text-xs font-bold text-slate-600 dark:text-slate-300 select-none pointer-events-none">
-                        <span>🇮🇳</span>
-                        <span>+91</span>
-                      </div>
-                      <input
-                        type="tel"
-                        required
-                        placeholder="90635 34530"
-                        value={phoneNumber}
-                        onChange={(e) => {
-                          const filtered = e.target.value.replace(/[^0-9+\s-]/g, '');
-                          setPhoneNumber(filtered);
-                          if (errorMessage) setErrorMessage(null);
-                        }}
-                        className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-16 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
-                          isPhoneInvalid
-                            ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
-                            : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
-                        }`}
-                      />
-                    </div>
-                    {isPhoneInvalid && (
-                      <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
-                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                        <span>Enter a valid 10-digit mobile number (letters not allowed).</span>
-                      </p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* Identifier field for Sign In (Email, Phone or @username) */}
-              {mode === 'signin' && (
-                <div className="space-y-1 text-left">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                    <span>{t.auth.identifierLabel}</span>
-                    {rememberedCustomer && identifier === rememberedCustomer.identifier && (
-                      <span className="text-[10px] text-indigo-500 font-medium">
-                        Pre-filled from device
-                      </span>
-                    )}
-                  </label>
-                  <div className="relative flex items-center">
-                    <Smartphone className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                    <input
-                      type="text"
-                      required
-                      placeholder="@chithanya or 90635 34530 or +91 90635 34530"
-                      value={identifier}
-                      onChange={(e) => {
-                        setIdentifier(e.target.value);
-                        if (errorMessage) setErrorMessage(null);
-                      }}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Password with Strength Indicator */}
-              <div className="space-y-1 text-left">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {t.auth.passwordLabel} <span className="text-rose-500">*</span>
-                  </label>
-                  {mode === 'signin' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowForgotModal(true);
-                        setForgotStatus(null);
-                      }}
-                      className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
-                    >
-                      {t.auth.forgotPassword}
-                    </button>
-                  )}
-                </div>
-                <div className="relative flex items-center">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    placeholder={mode === 'signup' ? 'Min. 6 chars (letters & numbers)' : 'Enter your password'}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errorMessage) setErrorMessage(null);
-                    }}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-
-                {/* Password strength meter for signup */}
-                {mode === 'signup' && password.length > 0 && (
-                  <div className="space-y-1 pt-1">
-                    <div className="flex items-center justify-between text-[10px] text-slate-500">
-                      <span>Strength: {strength.label}</span>
-                      {password.length < 6 && (
-                        <span className="text-rose-500 font-medium">Must be at least 6 characters</span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 h-1.5 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className={`h-full ${strength.score >= 1 ? strength.color : 'bg-transparent'}`}></div>
-                      <div className={`h-full ${strength.score >= 2 ? strength.color : 'bg-transparent'}`}></div>
-                      <div className={`h-full ${strength.score >= 3 ? strength.color : 'bg-transparent'}`}></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Remember Customer Details Checkbox */}
-              <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 text-left transition-colors">
-                <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 mt-0.5 rounded text-indigo-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                      <span>{t.auth.rememberMe || 'Remember my login details on this device'}</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {t.auth.rememberMeSubtitle || 'Keeps your identifier securely saved for effortless 1-click access.'}
-                    </p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Submit Sign In / Sign Up Button */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Verifying credentials...</span>
-                  </span>
-                ) : (
-                  <>
-                    <span>{mode === 'signin' ? t.auth.signInButton : t.auth.signUpButton}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Quick Demo Access Divider */}
-        <div className="relative flex py-1 items-center">
-          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-          <span className="flex-shrink mx-3 text-[10px] text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider font-semibold">
-            Or Quick Access
-          </span>
-          <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
-        </div>
-
-        {/* 1-Click Instant Demo Login */}
-        <div className="space-y-2">
+        {/* Quick Demo Access */}
+        <div className="pt-1">
           <button
             type="button"
             onClick={handleQuickDemoLogin}
+            disabled={isLoading}
             className="w-full bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
           >
             <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>{t.auth?.quickDemoLogin || 'Quick Demo Login (@chithanya)'}</span>
+            <span>Quick Demo Access (Gov Saathi)</span>
           </button>
-
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
-            Registered demo mobile: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">90635 34530</code> (or handle <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">@chithanya</code>)
-          </p>
         </div>
       </div>
 
@@ -1245,16 +1334,78 @@ export const LoginScreen: React.FC = () => {
       <div className="text-center space-y-1">
         <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-1.5 font-medium">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Encrypted with Supabase Row-Level Security & PostgreSQL RLS</span>
+          <span>Encrypted with Supabase Row-Level Security (RLS) & Argon2 Hashing</span>
         </p>
       </div>
 
       {/* ========================================================= */}
-      {/* GOOGLE ACCOUNT CHOOSER MODAL                              */}
+      {/* FORGOT PASSWORD MODAL                                     */}
+      {/* ========================================================= */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-left">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-indigo-500" />
+                <span>Reset Password</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Enter your registered email address. We'll send you a secure link to reset your password.
+            </p>
+
+            {forgotStatus ? (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>{forgotStatus}</span>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotPasswordSubmit} className="space-y-3">
+                <input
+                  type="email"
+                  required
+                  placeholder="name@example.com"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isForgotLoading}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold disabled:opacity-50"
+                  >
+                    {isForgotLoading ? 'Sending link...' : 'Send Reset Link'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* GOOGLE ONE-TAP / CHOOSER MODAL                            */}
       {/* ========================================================= */}
       {showGoogleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-sm rounded-3xl p-6 space-y-5 shadow-2xl text-left animate-in zoom-in-95">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-sm rounded-3xl p-6 space-y-4 shadow-2xl text-left animate-in zoom-in-95">
+            {/* Modal Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
@@ -1276,160 +1427,231 @@ export const LoginScreen: React.FC = () => {
                   />
                 </svg>
                 <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Sign In with Google
+                  {googleStep === 'choose' ? 'Sign in with Google' : 'Verify Password'}
                 </h4>
               </div>
               <button
                 type="button"
-                onClick={() => setShowGoogleModal(false)}
+                onClick={handleCloseGoogleModal}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Choose a Google account to continue to <strong>SpendWise AI</strong>.
-            </p>
+            {/* STEP 1: CHOOSE GOOGLE ACCOUNT */}
+            {googleStep === 'choose' && (
+              <div className="space-y-3.5 animate-in fade-in">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Choose a Google account to continue to <strong>Gov Saathi</strong>:
+                </p>
 
-            {/* Quick Account List */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() =>
-                  handleGoogleSignIn({
-                    name: 'Chithanya Reddy',
-                    email: 'chithanya.reddy@gmail.com',
-                    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-                  })
-                }
-                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
-              >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-                  CR
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    Chithanya Reddy
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    chithanya.reddy@gmail.com
-                  </p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  handleGoogleSignIn({
-                    name: 'Satya Reddy',
-                    email: 'satya.reddy@gmail.com',
-                  })
-                }
-                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
-              >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
-                  SR
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    Satya Reddy
-                  </p>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    satya.reddy@gmail.com
-                  </p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-              </button>
-            </div>
-
-            {/* Custom Google Account Entry */}
-            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                Or use another Google Account:
-              </span>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  placeholder="Your Full Name"
-                  value={customGoogleName}
-                  onChange={(e) => setCustomGoogleName(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-                <input
-                  type="email"
-                  placeholder="your.email@gmail.com"
-                  value={customGoogleEmail}
-                  onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!customGoogleEmail.includes('@')) {
-                      setErrorMessage('Please enter a valid Gmail address.');
-                      return;
-                    }
-                    handleGoogleSignIn({
-                      name: customGoogleName.trim() || customGoogleEmail.split('@')[0],
-                      email: customGoogleEmail.trim().toLowerCase(),
-                    });
-                  }}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs transition-colors"
-                >
-                  Continue with this Account
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* FORGOT PASSWORD MODAL                                     */}
-      {/* ========================================================= */}
-      {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl text-left">
-            <div className="space-y-1">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-indigo-500" />
-                <span>{t.auth.resetPassword}</span>
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t.auth.resetSubtitle}
-              </p>
-            </div>
-
-            {forgotStatus ? (
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                <span>{forgotStatus}</span>
-              </div>
-            ) : (
-              <form onSubmit={handleForgotPasswordSubmit} className="space-y-3">
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter @username or phone number"
-                  value={forgotIdentifier}
-                  onChange={(e) => setForgotIdentifier(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
-                />
-                <div className="flex justify-end gap-2 pt-1">
+                <div className="space-y-2">
                   <button
                     type="button"
-                    onClick={() => setShowForgotModal(false)}
-                    className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                    onClick={() =>
+                      handleSelectGoogleAccount({
+                        name: 'Chithanya Reddy',
+                        email: 'chithanya.reddy@gmail.com',
+                        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                      })
+                    }
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
                   >
-                    Close
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                      CR
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        Chithanya Reddy
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        chithanya.reddy@gmail.com
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSelectGoogleAccount({
+                        name: 'Satya Reddy',
+                        email: 'satya.reddy@gmail.com',
+                      })
+                    }
+                    className="w-full flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all text-left group"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 text-white font-bold flex items-center justify-center text-xs shadow-sm">
+                      SR
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                        Satya Reddy
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        satya.reddy@gmail.com
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                  </button>
+                </div>
+
+                {/* Custom Google Account Entry */}
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                    Or enter another Google account:
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    value={customGoogleName}
+                    onChange={(e) => setCustomGoogleName(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <input
+                    type="email"
+                    placeholder="your.email@gmail.com"
+                    value={customGoogleEmail}
+                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!customGoogleEmail.includes('@')) {
+                        setToast({ type: 'error', message: 'Please enter a valid Gmail address.' });
+                        return;
+                      }
+                      handleSelectGoogleAccount({
+                        name: customGoogleName.trim() || customGoogleEmail.split('@')[0],
+                        email: customGoogleEmail.trim().toLowerCase(),
+                      });
+                    }}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>Next: Enter Password</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 2: ENTER PASSWORD FOR SELECTED GOOGLE ACCOUNT */}
+            {googleStep === 'password' && selectedGoogleAccount && (
+              <form onSubmit={handleGooglePasswordSubmit} className="space-y-4 animate-in fade-in">
+                {/* Selected Account Pill with Change Account button */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-bold flex items-center justify-center text-xs flex-shrink-0">
+                      {selectedGoogleAccount.name ? selectedGoogleAccount.name.charAt(0).toUpperCase() : 'G'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {selectedGoogleAccount.name}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        {selectedGoogleAccount.email}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleStep('choose');
+                      setGooglePassword('');
+                      setGoogleError(null);
+                    }}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold flex items-center gap-1 flex-shrink-0 ml-2"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    <span>Change</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    To continue, first verify it's you
+                  </h5>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Enter the password for your account to complete Google authentication.
+                  </p>
+                </div>
+
+                {/* Error Banner */}
+                {googleError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2 text-xs text-rose-600 dark:text-rose-400 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span className="font-medium">{googleError}</span>
+                  </div>
+                )}
+
+                {/* Password Input */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Enter your password <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                    <input
+                      type={showGooglePassword ? 'text' : 'password'}
+                      autoFocus
+                      required
+                      placeholder="Enter account password"
+                      value={googlePassword}
+                      onChange={(e) => {
+                        setGooglePassword(e.target.value);
+                        if (googleError) setGoogleError(null);
+                      }}
+                      className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                        googleError
+                          ? 'border-rose-500 ring-2 ring-rose-500/20'
+                          : 'border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGooglePassword(!showGooglePassword)}
+                      className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showGooglePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    Demo password: <code className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">Password@123</code>
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleStep('choose');
+                      setGooglePassword('');
+                      setGoogleError(null);
+                    }}
+                    className="px-3 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  >
+                    Back
+                  </button>
+
                   <button
                     type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-xl text-xs font-bold"
+                    disabled={isGoogleLoading || !googlePassword.trim()}
+                    className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
                   >
-                    {t.auth.sendOtp}
+                    {isGoogleLoading ? (
+                      <span className="flex items-center gap-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Verifying...</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span>Sign In</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
