@@ -18,10 +18,11 @@ import {
   MessageSquare,
   ArrowLeft,
   X,
+  UserCheck,
 } from 'lucide-react';
 import { useAuth, GoogleAuthProfile } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { normalizeIndianPhone, formatIndianPhoneNumber } from '../../utils/phoneUtils';
+import { normalizeIndianPhone } from '../../utils/phoneUtils';
 
 export const LoginScreen: React.FC = () => {
   const {
@@ -38,8 +39,9 @@ export const LoginScreen: React.FC = () => {
   const { t } = useLanguage();
 
   // Authentication mode & method
-  const [authMethod, setAuthMethod] = useState<'password' | 'phone_otp'>('password');
+  const [authMethod, setAuthMethod] = useState<'password' | 'phone_otp'>('phone_otp'); // Default to phone OTP since user is using it!
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [otpAuthMode, setOtpAuthMode] = useState<'signin' | 'signup'>('signin');
 
   // Password-based credentials
   const [identifier, setIdentifier] = useState('');
@@ -53,11 +55,12 @@ export const LoginScreen: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
 
   // Indian Phone + OTP Verification state
-  const [otpPhone, setOtpPhone] = useState('');
+  const [otpPhone, setOtpPhone] = useState('90635 34530'); // Pre-filled with user's registered phone
   const [otpFullName, setOtpFullName] = useState('');
   const [otpStep, setOtpStep] = useState<'input' | 'verify'>('input');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [activeFormattedPhone, setActiveFormattedPhone] = useState('');
+  const [registeredAccountInfo, setRegisteredAccountInfo] = useState<string | null>(null);
   const [simulatedOtp, setSimulatedOtp] = useState<string | null>(null);
   const [otpTimer, setOtpTimer] = useState<number>(30);
   const [isResendDisabled, setIsResendDisabled] = useState(true);
@@ -89,6 +92,9 @@ export const LoginScreen: React.FC = () => {
     if (rememberedCustomer && !identifier) {
       setIdentifier(rememberedCustomer.identifier);
       setRememberMe(rememberedCustomer.rememberMe !== false);
+      if (rememberedCustomer.phoneNumber) {
+        setOtpPhone(rememberedCustomer.phoneNumber.replace('+91', '').trim());
+      }
     }
   }, [rememberedCustomer]);
 
@@ -165,9 +171,9 @@ export const LoginScreen: React.FC = () => {
     if (/[A-Z]/.test(pwd)) score++;
     if (/[^A-Za-z0-9]/.test(pwd)) score++;
 
-    if (score <= 1) return { score: 1, label: t.auth.passwordStrength.weak, color: 'bg-rose-500' };
-    if (score <= 3) return { score: 2, label: t.auth.passwordStrength.fair, color: 'bg-amber-500' };
-    return { score: 3, label: t.auth.passwordStrength.strong, color: 'bg-emerald-500' };
+    if (score <= 1) return { score: 1, label: t.auth?.passwordStrength?.weak || 'Weak', color: 'bg-rose-500' };
+    if (score <= 3) return { score: 2, label: t.auth?.passwordStrength?.fair || 'Fair', color: 'bg-amber-500' };
+    return { score: 3, label: t.auth?.passwordStrength?.strong || 'Strong', color: 'bg-emerald-500' };
   };
 
   const strength = calculatePasswordStrength(password);
@@ -250,7 +256,7 @@ export const LoginScreen: React.FC = () => {
     setIsLoading(false);
   };
 
-  // Indian Phone + OTP: Send OTP Handler
+  // Indian Phone + OTP: Send OTP Handler (STRICT REGISTERED NUMBER CHECK)
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -264,11 +270,25 @@ export const LoginScreen: React.FC = () => {
       return;
     }
 
-    const result = await sendPhoneOtp(validation.formatted);
-    if (!result.success) {
-      setErrorMessage(result.error || 'Failed to send OTP. Please try again.');
+    if (otpAuthMode === 'signup' && (!otpFullName.trim() || otpFullName.trim().length < 2)) {
+      setErrorMessage('Please enter your Full Name to register.');
       setIsLoading(false);
       return;
+    }
+
+    const result = await sendPhoneOtp(validation.formatted, otpAuthMode);
+    if (!result.success) {
+      setErrorMessage(result.error || 'Failed to send OTP.');
+      setIsLoading(false);
+      return;
+    }
+
+    if (result.registeredUser) {
+      setRegisteredAccountInfo(
+        `${result.registeredUser.fullName} (@${result.registeredUser.username || 'user'})`
+      );
+    } else {
+      setRegisteredAccountInfo(null);
     }
 
     setActiveFormattedPhone(result.formattedPhone || validation.formatted);
@@ -297,7 +317,7 @@ export const LoginScreen: React.FC = () => {
     }
 
     setIsLoading(true);
-    const result = await verifyPhoneOtp(activeFormattedPhone, code, otpFullName, rememberMe);
+    const result = await verifyPhoneOtp(activeFormattedPhone, code, otpFullName, rememberMe, otpAuthMode);
     if (!result.success) {
       setErrorMessage(result.error || 'Verification failed. Please check the OTP code.');
       setIsLoading(false);
@@ -310,7 +330,6 @@ export const LoginScreen: React.FC = () => {
   // OTP Input Box change handler (auto-forwarding)
   const handleOtpDigitChange = (index: number, value: string) => {
     if (value.length > 1) {
-      // Handle paste of multiple digits
       const pastedDigits = value.replace(/\D/g, '').slice(0, 6).split('');
       const updated = [...otpDigits];
       pastedDigits.forEach((digit, i) => {
@@ -339,7 +358,7 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  // 1-Click Auto-Fill of simulated OTP
+  // 1-Click Auto-Fill of OTP
   const handleAutoFillOtp = (otp: string) => {
     const chars = otp.split('').slice(0, 6);
     setOtpDigits(chars);
@@ -352,14 +371,14 @@ export const LoginScreen: React.FC = () => {
     setErrorMessage(null);
     setIsLoading(true);
 
-    const result = await sendPhoneOtp(activeFormattedPhone);
+    const result = await sendPhoneOtp(activeFormattedPhone, otpAuthMode);
     setIsLoading(false);
 
     if (result.success) {
       setSimulatedOtp(result.otp || null);
       setOtpTimer(30);
       setIsResendDisabled(true);
-      setSuccessMessage('A fresh 6-digit OTP code has been sent via SMS.');
+      setSuccessMessage('A fresh 6-digit OTP code has been dispatched.');
       setTimeout(() => setSuccessMessage(null), 4000);
     } else {
       setErrorMessage(result.error || 'Failed to resend OTP.');
@@ -451,7 +470,7 @@ export const LoginScreen: React.FC = () => {
       {/* Main Authentication Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-slate-200/60 dark:shadow-none space-y-5 transition-all">
         {/* Remembered Customer Welcome Card */}
-        {rememberedCustomer && mode === 'signin' && (
+        {rememberedCustomer && (
           <div className="bg-gradient-to-r from-indigo-50 via-violet-50 to-indigo-50/50 dark:from-indigo-950/40 dark:via-violet-950/30 dark:to-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/60 rounded-2xl p-3.5 sm:p-4 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-bold flex items-center justify-center text-sm shadow-md shadow-indigo-500/20 flex-shrink-0">
@@ -533,6 +552,23 @@ export const LoginScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              setAuthMethod('phone_otp');
+              setErrorMessage(null);
+              setOtpStep('input');
+            }}
+            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              authMethod === 'phone_otp'
+                ? 'bg-white dark:bg-emerald-600 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <span className="text-sm">🇮🇳</span>
+            <span>Phone OTP (+91)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
               setAuthMethod('password');
               setErrorMessage(null);
             }}
@@ -545,30 +581,29 @@ export const LoginScreen: React.FC = () => {
             <Lock className="w-3.5 h-3.5" />
             <span>Password / Handle</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMethod('phone_otp');
-              setErrorMessage(null);
-              setOtpStep('input');
-            }}
-            className={`py-2 px-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
-              authMethod === 'phone_otp'
-                ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <span className="text-sm">🇮🇳</span>
-            <span>Phone OTP (+91)</span>
-          </button>
         </div>
 
-        {/* Error Alert */}
+        {/* Error Alert with Smart Switch action */}
         {errorMessage && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span className="font-medium text-left">{errorMessage}</span>
+          <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 space-y-2 text-xs text-rose-600 dark:text-rose-400 animate-in fade-in text-left">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span className="font-medium">{errorMessage}</span>
+            </div>
+            {/* If unregistered in OTP signin, offer 1-click register */}
+            {authMethod === 'phone_otp' && otpAuthMode === 'signin' && errorMessage.includes('not registered') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpAuthMode('signup');
+                  setErrorMessage(null);
+                }}
+                className="ml-6 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[11px] shadow-xs flex items-center gap-1 transition-colors"
+              >
+                <span>Register this mobile number now</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            )}
           </div>
         )}
 
@@ -581,7 +616,314 @@ export const LoginScreen: React.FC = () => {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 1: PASSWORD AUTHENTICATION (Sign In / Sign Up)       */}
+        {/* TAB 1: INDIAN PHONE NUMBER & OTP VERIFICATION            */}
+        {/* ========================================================= */}
+        {authMethod === 'phone_otp' && (
+          <div className="space-y-4">
+            {otpStep === 'input' ? (
+              <div className="space-y-3.5">
+                {/* Sign In vs Register Mobile Toggle */}
+                <div className="grid grid-cols-2 p-1 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200/80 dark:border-slate-800/80 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpAuthMode('signin');
+                      setErrorMessage(null);
+                    }}
+                    className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                      otpAuthMode === 'signin'
+                        ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Registered Sign In</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpAuthMode('signup');
+                      setErrorMessage(null);
+                    }}
+                    className={`py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                      otpAuthMode === 'signup'
+                        ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Register New Mobile</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleSendOtp} className="space-y-3.5 text-left">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-emerald-500" />
+                      <span>
+                        {otpAuthMode === 'signin'
+                          ? 'Sign In to Registered Mobile Number'
+                          : 'Register Your Mobile Number'}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {otpAuthMode === 'signin'
+                        ? 'OTP is sent exclusively to your registered mobile number (+91).'
+                        : 'Enter your name and mobile number to verify and create your account.'}
+                    </p>
+                  </div>
+
+                  {/* Full Name (Only when Registering New Mobile) */}
+                  {otpAuthMode === 'signup' && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        Full Name <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative flex items-center">
+                        <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Chithanya Reddy"
+                          value={otpFullName}
+                          onChange={(e) => {
+                            setOtpFullName(e.target.value);
+                            if (errorMessage) setErrorMessage(null);
+                          }}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Registered Indian Mobile Number Input */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                      <span>
+                        {otpAuthMode === 'signin'
+                          ? 'Registered Indian Mobile Number'
+                          : 'Indian Mobile Number'}
+                      </span>
+                      {otpAuthMode === 'signin' && (
+                        <span className="text-[10px] text-emerald-500 font-semibold">
+                          Registered accounts only
+                        </span>
+                      )}
+                    </label>
+                    <div className="relative flex items-center">
+                      <div className="absolute left-3 flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 select-none">
+                        <span className="text-sm">🇮🇳</span>
+                        <span>+91</span>
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        autoFocus
+                        placeholder="90635 34530"
+                        value={otpPhone}
+                        onChange={(e) => {
+                          const filtered = e.target.value.replace(/[^0-9\s]/g, '');
+                          setOtpPhone(filtered);
+                          if (errorMessage) setErrorMessage(null);
+                        }}
+                        className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-20 pr-3.5 py-2.5 text-xs sm:text-sm font-semibold tracking-wider text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
+                          isOtpPhoneInvalid
+                            ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
+                            : 'border-slate-300 dark:border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
+                        }`}
+                      />
+                    </div>
+                    {isOtpPhoneInvalid ? (
+                      <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
+                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                        <span>Indian numbers must be 10 digits starting with 6, 7, 8, or 9.</span>
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-slate-400">
+                        Enter 10-digit number. Example: <strong className="text-emerald-500">90635 34530</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Remember Me */}
+                  <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 rounded text-emerald-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                      />
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          <span>Remember my mobile details on this device</span>
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Send OTP button */}
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Checking registered number...</span>
+                      </span>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
+                        <span>
+                          {otpAuthMode === 'signin'
+                            ? 'Send OTP to Registered Mobile'
+                            : 'Verify & Register Mobile Number'}
+                        </span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              /* OTP Verification Step */
+              <div className="space-y-4 text-left animate-in fade-in slide-in-from-right-2">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpStep('input');
+                      setErrorMessage(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-emerald-600 font-semibold transition-colors"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Change Number</span>
+                  </button>
+                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    OTP Dispatched
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {otpAuthMode === 'signin'
+                      ? 'Verify Registered Mobile Number'
+                      : 'Complete Mobile Registration'}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Enter the 6-digit verification code sent to registered number{' '}
+                    <strong className="text-slate-800 dark:text-slate-200">
+                      {activeFormattedPhone}
+                    </strong>
+                  </p>
+                  {registeredAccountInfo && (
+                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      <UserCheck className="w-3 h-3 text-emerald-500" />
+                      <span>Account: {registeredAccountInfo}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Simulated SMS Arrival Toast Banner */}
+                {simulatedOtp && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-300 dark:border-emerald-700/60 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">📱</span>
+                        <div>
+                          <p className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">
+                            SpendWise Security SMS to Registered Mobile
+                          </p>
+                          <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                            Verification OTP for <strong>{activeFormattedPhone}</strong> is{' '}
+                            <strong className="font-mono text-xs">{simulatedOtp}</strong>
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFillOtp(simulatedOtp)}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs transition-all active:scale-95 flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>Auto-Fill</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 6 Individual Digit Input Boxes */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    6-Digit Verification Code <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-6 gap-2 sm:gap-3">
+                    {otpDigits.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => (otpInputRefs.current[index] = el)}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleOtpDigitChange(index, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                        className="w-full h-12 text-center text-lg font-bold font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-inner"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resend Timer & Button */}
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                    Didn't receive the SMS?
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isResendDisabled || isLoading}
+                    onClick={handleResendOtp}
+                    className={`font-semibold text-[11px] transition-colors ${
+                      isResendDisabled
+                        ? 'text-slate-400 cursor-not-allowed'
+                        : 'text-indigo-600 dark:text-indigo-400 hover:underline'
+                    }`}
+                  >
+                    {isResendDisabled ? `Resend OTP in ${otpTimer}s` : 'Resend OTP'}
+                  </button>
+                </div>
+
+                {/* Verify OTP Button */}
+                <button
+                  type="button"
+                  onClick={() => handleVerifyOtp()}
+                  disabled={isLoading || otpDigits.join('').length !== 6}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Verifying code...</span>
+                    </span>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Verify & Proceed to Dashboard</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 2: PASSWORD AUTHENTICATION (Sign In / Sign Up)       */}
         {/* ========================================================= */}
         {authMethod === 'password' && (
           <div className="space-y-4">
@@ -724,7 +1066,7 @@ export const LoginScreen: React.FC = () => {
                       <input
                         type="tel"
                         required
-                        placeholder="98765 43210"
+                        placeholder="90635 34530"
                         value={phoneNumber}
                         onChange={(e) => {
                           const filtered = e.target.value.replace(/[^0-9+\s-]/g, '');
@@ -764,7 +1106,7 @@ export const LoginScreen: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="@chithanya or 9876543210 or +91 98765 43210"
+                      placeholder="@chithanya or 90635 34530 or +91 90635 34530"
                       value={identifier}
                       onChange={(e) => {
                         setIdentifier(e.target.value);
@@ -879,241 +1221,6 @@ export const LoginScreen: React.FC = () => {
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* TAB 2: INDIAN PHONE NUMBER & OTP VERIFICATION            */}
-        {/* ========================================================= */}
-        {authMethod === 'phone_otp' && (
-          <div className="space-y-4">
-            {otpStep === 'input' ? (
-              <form onSubmit={handleSendOtp} className="space-y-4 text-left">
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Smartphone className="w-4 h-4 text-emerald-500" />
-                    <span>Sign In with Indian Mobile & OTP</span>
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Enter your 10-digit Indian phone number. We'll send a 6-digit verification code.
-                  </p>
-                </div>
-
-                {/* Optional Full Name (if registering new customer via OTP) */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                    <span>Full Name</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Optional</span>
-                  </label>
-                  <div className="relative flex items-center">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
-                    <input
-                      type="text"
-                      placeholder="e.g. Chithanya Reddy"
-                      value={otpFullName}
-                      onChange={(e) => setOtpFullName(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                </div>
-
-                {/* Indian Mobile Number Input */}
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Indian Mobile Number <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative flex items-center">
-                    <div className="absolute left-3 flex items-center gap-1.5 px-2 py-1 rounded bg-slate-200/70 dark:bg-slate-800 border border-slate-300/80 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 select-none">
-                      <span className="text-sm">🇮🇳</span>
-                      <span>+91</span>
-                    </div>
-                    <input
-                      type="tel"
-                      required
-                      autoFocus
-                      placeholder="98765 43210"
-                      value={otpPhone}
-                      onChange={(e) => {
-                        const filtered = e.target.value.replace(/[^0-9\s]/g, '');
-                        setOtpPhone(filtered);
-                        if (errorMessage) setErrorMessage(null);
-                      }}
-                      className={`w-full bg-slate-50 dark:bg-slate-950 border rounded-xl pl-20 pr-3.5 py-2.5 text-xs sm:text-sm font-semibold tracking-wider text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none transition-all ${
-                        isOtpPhoneInvalid
-                          ? 'border-rose-500 focus:border-rose-500 ring-2 ring-rose-500/20'
-                          : 'border-slate-300 dark:border-slate-700 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20'
-                      }`}
-                    />
-                  </div>
-                  {isOtpPhoneInvalid ? (
-                    <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1 mt-1">
-                      <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                      <span>Indian numbers must be 10 digits starting with 6, 7, 8, or 9.</span>
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-slate-400">
-                      Standard Indian cellular format (e.g. 98765 43210).
-                    </p>
-                  )}
-                </div>
-
-                {/* Remember Me */}
-                <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 transition-colors">
-                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 mt-0.5 rounded text-emerald-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
-                    />
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                        <span>Remember my mobile details on this device</span>
-                      </span>
-                    </div>
-                  </label>
-                </div>
-
-                {/* Send OTP button */}
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Sending OTP code...</span>
-                    </span>
-                  ) : (
-                    <>
-                      <MessageSquare className="w-4 h-4" />
-                      <span>Get 6-Digit OTP via SMS</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-            ) : (
-              /* OTP Verification Step */
-              <div className="space-y-4 text-left animate-in fade-in slide-in-from-right-2">
-                <div className="flex items-center justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOtpStep('input');
-                      setErrorMessage(null);
-                    }}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 font-semibold transition-colors"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Change Number</span>
-                  </button>
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                    SMS Dispatched
-                  </span>
-                </div>
-
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Verify Your Mobile Number
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Enter the 6-digit code sent to <strong className="text-slate-800 dark:text-slate-200">{activeFormattedPhone}</strong>
-                  </p>
-                </div>
-
-                {/* Simulated SMS Arrival Toast Banner */}
-                {simulatedOtp && (
-                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-300 dark:border-emerald-700/60 shadow-sm space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">📱</span>
-                        <div>
-                          <p className="text-[11px] font-bold text-emerald-900 dark:text-emerald-200">
-                            SpendWise Security SMS Received
-                          </p>
-                          <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                            Your verification OTP is <strong className="font-mono text-xs">{simulatedOtp}</strong>
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleAutoFillOtp(simulatedOtp)}
-                        className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs transition-all active:scale-95 flex items-center gap-1"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>Auto-Fill</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 6 Individual Digit Input Boxes */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    6-Digit Verification Code <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-6 gap-2 sm:gap-3">
-                    {otpDigits.map((digit, index) => (
-                      <input
-                        key={index}
-                        ref={(el) => (otpInputRefs.current[index] = el)}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpDigitChange(index, e.target.value)}
-                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-full h-12 text-center text-lg font-bold font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all shadow-inner"
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Resend Timer & Button */}
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
-                    Didn't receive the SMS?
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isResendDisabled || isLoading}
-                    onClick={handleResendOtp}
-                    className={`font-semibold text-[11px] transition-colors ${
-                      isResendDisabled
-                        ? 'text-slate-400 cursor-not-allowed'
-                        : 'text-indigo-600 dark:text-indigo-400 hover:underline'
-                    }`}
-                  >
-                    {isResendDisabled ? `Resend OTP in ${otpTimer}s` : 'Resend OTP'}
-                  </button>
-                </div>
-
-                {/* Verify OTP Button */}
-                <button
-                  type="button"
-                  onClick={() => handleVerifyOtp()}
-                  disabled={isLoading || otpDigits.join('').length !== 6}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Verifying code...</span>
-                    </span>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4" />
-                      <span>Verify & Continue</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Quick Demo Access Divider */}
         <div className="relative flex py-1 items-center">
           <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
@@ -1135,7 +1242,7 @@ export const LoginScreen: React.FC = () => {
           </button>
 
           <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
-            Demo credentials: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">@chithanya</code> (or mobile: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">9876543210</code>)
+            Registered demo mobile: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400">90635 34530</code> (or handle <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">@chithanya</code>)
           </p>
         </div>
       </div>

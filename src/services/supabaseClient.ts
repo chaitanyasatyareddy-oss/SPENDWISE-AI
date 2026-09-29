@@ -42,7 +42,27 @@ export const LocalDB = {
       return initialUsers;
     }
     try {
-      return JSON.parse(raw);
+      const users: UserProfile[] = JSON.parse(raw);
+      // Ensure initial demo profile includes the latest registered phone numbers
+      const demoIdx = users.findIndex(u => u.id === initialUserProfile.id);
+      if (demoIdx >= 0) {
+        let changed = false;
+        if (users[demoIdx].phoneNumber !== initialUserProfile.phoneNumber) {
+          users[demoIdx].phoneNumber = initialUserProfile.phoneNumber;
+          changed = true;
+        }
+        if (users[demoIdx].alternatePhone !== initialUserProfile.alternatePhone) {
+          users[demoIdx].alternatePhone = initialUserProfile.alternatePhone;
+          changed = true;
+        }
+        if (changed) {
+          localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+        }
+      } else {
+        users.unshift(initialUserProfile);
+        localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(users));
+      }
+      return users;
     } catch {
       return [initialUserProfile];
     }
@@ -70,6 +90,7 @@ export const LocalDB = {
     return users.find(u => {
       const uUsername = u.username?.toLowerCase();
       const uPhone = u.phoneNumber?.replace(/[\s-]/g, '');
+      const uAltPhone = u.alternatePhone?.replace(/[\s-]/g, '');
       const uEmail = u.email?.toLowerCase();
 
       // Check username match
@@ -78,15 +99,18 @@ export const LocalDB = {
       // Check email match
       if (uEmail && uEmail === clean) return true;
 
-      // Check phone match only if input consists of valid phone digits
+      // Check phone match against primary and alternate phone numbers
       const cleanDigits = clean.replace(/\D/g, '');
       const uPhoneDigits = uPhone ? uPhone.replace(/\D/g, '') : '';
-      if (cleanDigits.length >= 10 && uPhoneDigits.length >= 10) {
-        if (cleanDigits.slice(-10) === uPhoneDigits.slice(-10)) return true;
+      const uAltPhoneDigits = uAltPhone ? uAltPhone.replace(/\D/g, '') : '';
+
+      if (cleanDigits.length >= 10) {
+        if (uPhoneDigits.length >= 10 && cleanDigits.slice(-10) === uPhoneDigits.slice(-10)) return true;
+        if (uAltPhoneDigits.length >= 10 && cleanDigits.slice(-10) === uAltPhoneDigits.slice(-10)) return true;
       }
-      if (/^\+?[0-9]{7,15}$/.test(cleanPhone) && uPhone) {
-        if (uPhone === cleanPhone) return true;
-        if (cleanPhone.length >= 10 && uPhone.endsWith(cleanPhone)) return true;
+      if (/^\+?[0-9]{7,15}$/.test(cleanPhone)) {
+        if (uPhone && (uPhone === cleanPhone || (cleanPhone.length >= 10 && uPhone.endsWith(cleanPhone)))) return true;
+        if (uAltPhone && (uAltPhone === cleanPhone || (cleanPhone.length >= 10 && uAltPhone.endsWith(cleanPhone)))) return true;
       }
 
       return false;

@@ -39,6 +39,7 @@ export interface UserProfile {
   email: string;
   username?: string;
   phoneNumber?: string;
+  alternatePhone?: string;
   password?: string;
   authProvider?: 'credentials' | 'google' | 'phone_otp';
   needsUsername?: boolean;

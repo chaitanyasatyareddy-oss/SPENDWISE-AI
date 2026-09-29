@@ -18,8 +18,8 @@ export interface AuthContextType {
   login: (identifier: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   signup: (fullName: string, username: string, phoneNumber: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (googleProfile?: GoogleAuthProfile, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
-  sendPhoneOtp: (phoneNumber: string) => Promise<{ success: boolean; otp?: string; error?: string; formattedPhone?: string }>;
-  verifyPhoneOtp: (phoneNumber: string, otp: string, fullName?: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string; isNewUser?: boolean }>;
+  sendPhoneOtp: (phoneNumber: string, mode?: 'signin' | 'signup') => Promise<{ success: boolean; otp?: string; error?: string; formattedPhone?: string; registeredUser?: UserProfile }>;
+  verifyPhoneOtp: (phoneNumber: string, otp: string, fullName?: string, rememberMe?: boolean, mode?: 'signin' | 'signup') => Promise<{ success: boolean; error?: string; isNewUser?: boolean }>;
   logout: () => void;
   checkUsernameAvailability: (username: string) => boolean;
   claimUsername: (newUsername: string) => { success: boolean; error?: string };
@@ -337,13 +337,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Indian Phone OTP: Send verification code
+  // Indian Phone OTP: Send verification code to registered mobile number
   const sendPhoneOtp = async (
-    phoneNumber: string
-  ): Promise<{ success: boolean; otp?: string; error?: string; formattedPhone?: string }> => {
+    phoneNumber: string,
+    mode: 'signin' | 'signup' = 'signin'
+  ): Promise<{ success: boolean; otp?: string; error?: string; formattedPhone?: string; registeredUser?: UserProfile }> => {
     await new Promise((res) => setTimeout(res, 400));
     const validation = normalizeIndianPhone(phoneNumber);
     if (!validation.isValid) {
       return { success: false, error: validation.error };
+    }
+
+    const existingUser = LocalDB.findUserByIdentifier(validation.raw10);
+
+    // Strict validation: In signin mode, OTP is only sent to a registered mobile number
+    if (mode === 'signin') {
+      if (!existingUser) {
+        return {
+          success: false,
+          error: `Mobile number ${validation.formatted} is not registered. Please create an account or register your mobile number first.`
+        };
+      }
+    } else {
+      // In signup mode, the number must not already be taken
+      if (existingUser) {
+        return {
+          success: false,
+          error: `Mobile number ${validation.formatted} is already registered to ${existingUser.fullName || existingUser.username}. Please switch to Sign In.`
+        };
+      }
     }
 
     const generatedOtp = generateNumericOtp();
@@ -367,6 +389,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       success: true,
       otp: generatedOtp,
       formattedPhone: validation.formatted,
+      registeredUser: existingUser,
     };
   };
 
@@ -375,7 +398,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     phoneNumber: string,
     enteredOtp: string,
     fullName?: string,
-    rememberMe: boolean = true
+    rememberMe: boolean = true,
+    mode: 'signin' | 'signup' = 'signin'
   ): Promise<{ success: boolean; error?: string; isNewUser?: boolean }> => {
     await new Promise((res) => setTimeout(res, 450));
     const validation = normalizeIndianPhone(phoneNumber);
@@ -398,10 +422,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, error: 'Incorrect OTP. Please enter the valid 6-digit verification code.' };
     }
 
-    let existingUser = LocalDB.findUserByIdentifier(validation.raw10);
+    let userToLogin = LocalDB.findUserByIdentifier(validation.raw10);
     let isNewUser = false;
 
-    if (!existingUser) {
+    if (mode === 'signup' && !userToLogin) {
       isNewUser = true;
       const cleanName = fullName?.trim() || `User ${validation.raw10.slice(-4)}`;
       const baseUsername = `user_${validation.raw10.slice(-6)}`;
@@ -409,7 +433,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ? baseUsername
         : `user_${Date.now().toString().slice(-6)}`;
 
-      existingUser = {
+      userToLogin = {
         id: `usr_phone_${Date.now()}`,
         email: `${username}@spendwise.ai`,
         username,
@@ -424,21 +448,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         targetMonthlyBudget: 35000,
         monthlyIncome: 65000,
       };
-      LocalDB.saveRegisteredUser(existingUser);
+      LocalDB.saveRegisteredUser(userToLogin);
     }
 
-    LocalDB.setActiveSession(existingUser);
-    setUser(existingUser);
+    if (!userToLogin) {
+      return {
+        success: false,
+        error: `Account with mobile number ${validation.formatted} could not be found. Please register.`
+      };
+    }
+
+    LocalDB.setActiveSession(userToLogin);
+    setUser(userToLogin);
     setActiveOtpSession(null);
 
     if (rememberMe) {
       const customerToSave: RememberedCustomer = {
-        identifier: existingUser.phoneNumber || (existingUser.username ? `@${existingUser.username}` : existingUser.email),
-        fullName: existingUser.fullName,
-        username: existingUser.username,
-        phoneNumber: existingUser.phoneNumber,
-        email: existingUser.email,
-        avatarUrl: existingUser.avatarUrl,
+        identifier: userToLogin.phoneNumber || (userToLogin.username ? `@${userToLogin.username}` : userToLogin.email),
+        fullName: userToLogin.fullName,
+        username: userToLogin.username,
+        phoneNumber: userToLogin.phoneNumber,
+        email: userToLogin.email,
+        avatarUrl: userToLogin.avatarUrl,
         rememberMe: true,
         lastLoginAt: new Date().toISOString(),
       };
