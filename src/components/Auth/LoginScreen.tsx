@@ -9,7 +9,6 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
   KeyRound,
   ShieldCheck,
   RefreshCw,
@@ -49,7 +48,6 @@ export const LoginScreen: React.FC = () => {
     verifySupabasePhoneOtp,
     sendPasswordResetEmail,
     loginWithGoogle,
-    login,
     rememberedCustomer,
   } = useAuth();
   const { t } = useLanguage();
@@ -506,18 +504,6 @@ export const LoginScreen: React.FC = () => {
     setSelectedGoogleAccount(null);
     setGooglePassword('');
     setGoogleError(null);
-  };
-
-  // Quick Demo Login Handler
-  const handleQuickDemoLogin = async () => {
-    setIsLoading(true);
-    const result = await login('9063534530', 'Password@123', true);
-    setIsLoading(false);
-    if (result.success) {
-      setToast({ type: 'success', message: 'Welcome to Spend Wise AI Demo!' });
-    } else {
-      setToast({ type: 'error', message: result.error || 'Demo login failed.' });
-    }
   };
 
   const nameError = getNameError();
@@ -1277,19 +1263,6 @@ export const LoginScreen: React.FC = () => {
             <span>Continue with Google</span>
           </button>
         </div>
-
-        {/* Quick Demo Access */}
-        <div className="pt-1">
-          <button
-            type="button"
-            onClick={handleQuickDemoLogin}
-            disabled={isLoading}
-            className="w-full bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
-          >
-            <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>Quick Demo Access (Spend Wise AI)</span>
-          </button>
-        </div>
       </div>
 
       {/* Security Assurance Footer */}
@@ -1579,9 +1552,6 @@ export const LoginScreen: React.FC = () => {
                       {showGooglePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400">
-                    Demo password: <code className="text-indigo-600 dark:text-indigo-400 font-mono font-bold">Password@123</code>
-                  </p>
                 </div>
 
                 {/* Actions */}
