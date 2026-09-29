@@ -79,6 +79,11 @@ export const LocalDB = {
       if (uEmail && uEmail === clean) return true;
 
       // Check phone match only if input consists of valid phone digits
+      const cleanDigits = clean.replace(/\D/g, '');
+      const uPhoneDigits = uPhone ? uPhone.replace(/\D/g, '') : '';
+      if (cleanDigits.length >= 10 && uPhoneDigits.length >= 10) {
+        if (cleanDigits.slice(-10) === uPhoneDigits.slice(-10)) return true;
+      }
       if (/^\+?[0-9]{7,15}$/.test(cleanPhone) && uPhone) {
         if (uPhone === cleanPhone) return true;
         if (cleanPhone.length >= 10 && uPhone.endsWith(cleanPhone)) return true;

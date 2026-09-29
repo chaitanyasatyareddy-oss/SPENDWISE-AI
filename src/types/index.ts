@@ -40,6 +40,7 @@ export interface UserProfile {
   username?: string;
   phoneNumber?: string;
   password?: string;
+  authProvider?: 'credentials' | 'google' | 'phone_otp';
   needsUsername?: boolean;
   fullName: string;
   avatarUrl?: string;
