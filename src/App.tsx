@@ -30,23 +30,20 @@ export const AppContent: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const { t } = useLanguage();
 
-  // If user is not authenticated, render Login/Signup Screen
+  // If user is not authenticated, render dedicated Login/Signup Screen
   if (!isAuthenticated) {
     return (
       <MobileFrameWrapper
         isMobileView={isMobileView}
         onToggleView={(val) => setIsMobileView(val)}
       >
-        <AuthHeader
-          isMobileView={isMobileView}
-          onToggleView={(val) => setIsMobileView(val)}
-        />
-        <div className="flex-1 flex items-center justify-center p-2">
+        <div className="flex-1 flex items-center justify-center py-8 px-2 sm:px-4">
           <LoginScreen />
         </div>
       </MobileFrameWrapper>
     );
   }
+
 
   // Authenticated state: full dashboard and features
   return (

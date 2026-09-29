@@ -50,6 +50,19 @@ export interface UserProfile {
   monthlyIncome: number;
 }
 
+export interface RememberedCustomer {
+  identifier: string;
+  fullName?: string;
+  username?: string;
+  phoneNumber?: string;
+  email?: string;
+  avatarUrl?: string;
+  rememberMe: boolean;
+  lastLoginAt: string;
+  savedPassword?: string;
+}
+
+
 export interface ExpenseItem {
   id: string;
   expenseId: string;

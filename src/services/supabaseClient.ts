@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Expense, Budget, SavingsGoal, Subscription, Bill, SharedGroup, Challenge, UserProfile } from '../types';
+import { Expense, Budget, SavingsGoal, Subscription, Bill, SharedGroup, Challenge, UserProfile, RememberedCustomer } from '../types';
 import {
   initialUserProfile,
   initialExpenses,
@@ -12,7 +12,7 @@ import {
 } from '../data/seedData';
 
 // Supabase environment variables (with fallback for standalone execution)
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://mock-spendwise.supabase.co';
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://ngqvqmhjooowoxlmwfun.supabase.co';
 const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'mock-anon-key-spendwise';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
@@ -21,6 +21,8 @@ const STORAGE_KEYS = {
   USER: 'spendwise_user_profile',
   SESSION: 'spendwise_active_session',
   USERS_LIST: 'spendwise_registered_users',
+  REMEMBERED_CUSTOMER: 'spendwise_remembered_customer',
+  REMEMBER_ME: 'spendwise_remember_me',
   EXPENSES: 'spendwise_expenses',
   BUDGETS: 'spendwise_budgets',
   SUBSCRIPTIONS: 'spendwise_subscriptions',
@@ -39,7 +41,11 @@ export const LocalDB = {
       localStorage.setItem(STORAGE_KEYS.USERS_LIST, JSON.stringify(initialUsers));
       return initialUsers;
     }
-    return JSON.parse(raw);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [initialUserProfile];
+    }
   },
 
   saveRegisteredUser(user: UserProfile): void {
@@ -86,10 +92,13 @@ export const LocalDB = {
   getActiveSession(): UserProfile | null {
     const raw = localStorage.getItem(STORAGE_KEYS.SESSION);
     if (!raw) {
-      // Default to initial user profile for smooth backward compatibility
-      return initialUserProfile;
+      return null;
     }
-    return JSON.parse(raw);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   },
 
   setActiveSession(user: UserProfile | null): void {
@@ -101,6 +110,44 @@ export const LocalDB = {
       this.saveRegisteredUser(user);
     }
   },
+
+  getRememberedCustomer(): RememberedCustomer | null {
+    const raw = localStorage.getItem(STORAGE_KEYS.REMEMBERED_CUSTOMER);
+    if (!raw) {
+      // Default to demo user remembered customer for first-time convenience
+      const defaultRemembered: RememberedCustomer = {
+        identifier: initialUserProfile.username || 'chithanya',
+        fullName: initialUserProfile.fullName,
+        username: initialUserProfile.username,
+        phoneNumber: initialUserProfile.phoneNumber,
+        email: initialUserProfile.email,
+        rememberMe: true,
+        lastLoginAt: new Date().toISOString(),
+      };
+      return defaultRemembered;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
+  saveRememberedCustomer(customer: RememberedCustomer): void {
+    localStorage.setItem(STORAGE_KEYS.REMEMBERED_CUSTOMER, JSON.stringify(customer));
+    localStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'true');
+  },
+
+  clearRememberedCustomer(): void {
+    localStorage.removeItem(STORAGE_KEYS.REMEMBERED_CUSTOMER);
+    localStorage.setItem(STORAGE_KEYS.REMEMBER_ME, 'false');
+  },
+
+  isRememberMeEnabled(): boolean {
+    const flag = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME);
+    return flag === null ? true : flag === 'true';
+  },
+
 
   getUserProfile(): UserProfile {
     const session = this.getActiveSession();

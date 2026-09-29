@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { UserProfile } from '../types';
-import { LocalDB } from '../services/supabaseClient';
+import { UserProfile, RememberedCustomer } from '../types';
+import { LocalDB, supabase } from '../services/supabaseClient';
 
 interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
-  login: (identifier: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (fullName: string, username: string, phoneNumber: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  rememberedCustomer: RememberedCustomer | null;
+  clearRememberedCustomer: () => void;
+  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
+  signup: (fullName: string, username: string, phoneNumber: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   checkUsernameAvailability: (username: string) => boolean;
   claimUsername: (newUsername: string) => { success: boolean; error?: string };
@@ -19,6 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(() => LocalDB.getActiveSession());
+  const [rememberedCustomer, setRememberedCustomer] = useState<RememberedCustomer | null>(() => LocalDB.getRememberedCustomer());
   const [showUsernameOnboarding, setShowUsernameOnboarding] = useState<boolean>(() => {
     const session = LocalDB.getActiveSession();
     return Boolean(session && (session.needsUsername || !session.username));
@@ -26,15 +29,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAuthenticated = !!user;
 
+  // Clear remembered customer details
+  const clearRememberedCustomer = () => {
+    LocalDB.clearRememberedCustomer();
+    setRememberedCustomer(null);
+  };
+
   // Check username availability
   const checkUsernameAvailability = (username: string): boolean => {
     return LocalDB.isUsernameAvailable(username, user?.id);
   };
 
   // Login handler
-  const login = async (identifier: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (
+    identifier: string,
+    password: string,
+    rememberMe: boolean = true
+  ): Promise<{ success: boolean; error?: string }> => {
     // Artificial latency for realism
     await new Promise((res) => setTimeout(res, 450));
+
+    // Optional Supabase Auth attempt if email
+    if (identifier.includes('@') && !identifier.startsWith('@')) {
+      try {
+        const { data: sbData } = await supabase.auth.signInWithPassword({
+          email: identifier.trim(),
+          password,
+        });
+        if (sbData?.user) {
+          console.log('[Supabase Auth] Signed in cloud user:', sbData.user.id);
+        }
+      } catch (err) {
+        // Fallback safely to LocalDB
+      }
+    }
 
     const foundUser = LocalDB.findUserByIdentifier(identifier);
     if (!foundUser) {
@@ -49,12 +77,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     LocalDB.setActiveSession(foundUser);
     setUser(foundUser);
 
+    // Save or clear remembered customer login details based on checkbox
+    if (rememberMe) {
+      const customerToSave: RememberedCustomer = {
+        identifier: foundUser.username ? `@${foundUser.username}` : (foundUser.phoneNumber || foundUser.email),
+        fullName: foundUser.fullName,
+        username: foundUser.username,
+        phoneNumber: foundUser.phoneNumber,
+        email: foundUser.email,
+        avatarUrl: foundUser.avatarUrl,
+        rememberMe: true,
+        lastLoginAt: new Date().toISOString(),
+      };
+      LocalDB.saveRememberedCustomer(customerToSave);
+      setRememberedCustomer(customerToSave);
+    } else {
+      LocalDB.clearRememberedCustomer();
+      setRememberedCustomer(null);
+    }
+
     if (foundUser.needsUsername || !foundUser.username) {
       setShowUsernameOnboarding(true);
     }
 
     return { success: true };
   };
+
 
   // Signup handler
   const signup = async (
@@ -94,6 +142,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     LocalDB.setActiveSession(newUser);
     setUser(newUser);
     setShowUsernameOnboarding(false);
+
+    if (rememberMe) {
+      const customerToSave: RememberedCustomer = {
+        identifier: `@${cleanUsername}`,
+        fullName: newUser.fullName,
+        username: newUser.username,
+        phoneNumber: newUser.phoneNumber,
+        email: newUser.email,
+        avatarUrl: newUser.avatarUrl,
+        rememberMe: true,
+        lastLoginAt: new Date().toISOString(),
+      };
+      LocalDB.saveRememberedCustomer(customerToSave);
+      setRememberedCustomer(customerToSave);
+    } else {
+      LocalDB.clearRememberedCustomer();
+      setRememberedCustomer(null);
+    }
 
     return { success: true };
   };
@@ -136,6 +202,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     LocalDB.setActiveSession(null);
     setUser(null);
     setShowUsernameOnboarding(false);
+    // Keep remembered customer details in state & storage so the login form remembers them!
+    const remembered = LocalDB.getRememberedCustomer();
+    setRememberedCustomer(remembered);
   };
 
   return (
@@ -143,6 +212,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         isAuthenticated,
+        rememberedCustomer,
+        clearRememberedCustomer,
         login,
         signup,
         logout,
@@ -157,6 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
+
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

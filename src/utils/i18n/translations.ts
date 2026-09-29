@@ -68,7 +68,14 @@ export interface TranslationSchema {
     onboardingSubtitle: string;
     claimHandle: string;
     logout: string;
+    rememberMe: string;
+    rememberMeSubtitle: string;
+    welcomeBackCustomer: string;
+    switchAccount: string;
+    clearRemembered: string;
+    savedOnThisDevice: string;
   };
+
   nav: {
     dashboard: string;
     analytics: string;
@@ -150,8 +157,15 @@ export const englishTranslations: TranslationSchema = {
     onboardingTitle: "Choose your unique handle",
     onboardingSubtitle: "Complete your profile with a personalized @username to collaborate on group ledgers",
     claimHandle: "Claim Handle & Continue",
-    logout: "Sign Out"
+    logout: "Sign Out",
+    rememberMe: "Remember my login details on this device",
+    rememberMeSubtitle: "Keep your account securely remembered for 1-click access",
+    welcomeBackCustomer: "Welcome back",
+    switchAccount: "Switch account",
+    clearRemembered: "Forget this device",
+    savedOnThisDevice: "Login details remembered on this device"
   },
+
   nav: {
     dashboard: "Dashboard",
     analytics: "Analytics & Forecast",
