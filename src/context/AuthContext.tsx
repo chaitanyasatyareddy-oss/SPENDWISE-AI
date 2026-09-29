@@ -109,8 +109,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fullName: string,
     username: string,
     phoneNumber: string,
-    password: string
+    password: string,
+    rememberMe: boolean = true
   ): Promise<{ success: boolean; error?: string }> => {
+
     await new Promise((res) => setTimeout(res, 500));
 
     const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');

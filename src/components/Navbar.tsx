@@ -117,20 +117,24 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* User Profile Pill & Logout */}
           {user && (
-            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs">
-              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                <AtSign className="w-3 h-3 text-indigo-500" />
-                <span>{user.username || user.fullName.split(' ')[0]}</span>
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-xl border border-slate-300 dark:border-slate-700 text-xs">
+              <span className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center text-[10px] font-bold">
+                  {(user.fullName || user.username || 'U').charAt(0).toUpperCase()}
+                </span>
+                <span className="hidden sm:inline">@{user.username || user.fullName.split(' ')[0]}</span>
               </span>
               <button
                 onClick={logout}
-                className="p-1 text-slate-400 hover:text-rose-500 transition-colors ml-1"
-                title={t.auth.logout}
+                className="flex items-center gap-1 text-slate-500 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors pl-1.5 border-l border-slate-200 dark:border-slate-700 ml-0.5 text-[11px] font-medium"
+                title={t.auth.logout || 'Sign Out'}
               >
                 <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">{t.auth.logout || 'Sign Out'}</span>
               </button>
             </div>
           )}
+
 
           {/* Quick Add Expense Action */}
           <button

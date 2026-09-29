@@ -68,13 +68,14 @@ export interface TranslationSchema {
     onboardingSubtitle: string;
     claimHandle: string;
     logout: string;
-    rememberMe: string;
-    rememberMeSubtitle: string;
-    welcomeBackCustomer: string;
-    switchAccount: string;
-    clearRemembered: string;
-    savedOnThisDevice: string;
+    rememberMe?: string;
+    rememberMeSubtitle?: string;
+    welcomeBackCustomer?: string;
+    switchAccount?: string;
+    clearRemembered?: string;
+    savedOnThisDevice?: string;
   };
+
 
   nav: {
     dashboard: string;
