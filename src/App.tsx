@@ -64,7 +64,7 @@ export const AppContent: React.FC = () => {
 
         {/* Minimalist Footer */}
         <footer className="w-full py-4 text-center border-t border-slate-200 dark:border-slate-800/60 text-xs text-slate-400 dark:text-slate-500">
-          <p>© {new Date().getFullYear()} SpendWise AI. Understand your spending. Plan your future.</p>
+          <p>© {new Date().getFullYear()} Spend Wise AI. Track • Analyze • Save Your Money.</p>
         </footer>
       </div>
     );

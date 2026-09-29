@@ -52,7 +52,7 @@ const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
 app.get('/', (req, res) => {
   res.status(200).json({
-    service: 'Gov Saathi / SpendWise AI Backend API',
+    service: 'Spend Wise AI Backend API',
     status: 'online',
     version: '2.1.0',
     platform: 'Render Web Service',
@@ -117,7 +117,7 @@ app.post('/api/chat', async (req, res) => {
   if (genAI) {
     try {
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const prompt = `You are Gov Saathi AI Financial Coach.
+      const prompt = `You are Spend Wise AI Financial Coach.
 User language: ${language}.
 Financial context: ${JSON.stringify(context || {})}
 User question: "${message}"
@@ -133,7 +133,7 @@ Respond with compassionate, highly actionable financial advice in the requested 
         suggestedActions: [
           'Review monthly essentials budget',
           'Track recent UPI transactions',
-          'Explore Gov Saathi savings goals',
+          'Explore Spend Wise AI savings goals',
         ],
       });
     } catch (err) {
@@ -144,8 +144,8 @@ Respond with compassionate, highly actionable financial advice in the requested 
 
   // Graceful rule-based response
   return res.status(200).json({
-    text: `Hello! I am your Gov Saathi Financial Coach. I received your query: "${message}". Your spending is currently in good health, with essential needs prioritized under your monthly budget limit.`,
-    poweredBy: 'Gov Saathi Intelligence Server',
+    text: `Hello! I am your Spend Wise AI Financial Coach. I received your query: "${message}". Your spending is currently in good health, with essential needs prioritized under your monthly budget limit.`,
+    poweredBy: 'Spend Wise AI Intelligence Server',
     suggestedActions: [
       'Check category spending donut',
       'Log cash or UPI payment',
@@ -215,7 +215,7 @@ Return ONLY valid JSON.`;
 
 // 404 Handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found on Gov Saathi Backend Server.' });
+  res.status(404).json({ error: 'Endpoint not found on Spend Wise AI Backend Server.' });
 });
 
 // Global Error Handler
@@ -225,6 +225,6 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`[Gov Saathi Backend] Server is running on port ${PORT}`);
-  console.log(`[Gov Saathi Backend] Health check: http://localhost:${PORT}/api/health`);
+  console.log(`[Spend Wise AI Backend] Server is running on port ${PORT}`);
+  console.log(`[Spend Wise AI Backend] Health check: http://localhost:${PORT}/api/health`);
 });

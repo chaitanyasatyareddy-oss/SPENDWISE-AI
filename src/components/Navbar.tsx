@@ -64,9 +64,11 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Top Controls Bar */}
       <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 dark:border-slate-800/80">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-white shadow-md shadow-indigo-500/20 text-xs flex-shrink-0">
-            SW
-          </div>
+          <img
+            src="/logo.jpg"
+            alt="Spend Wise AI Logo"
+            className="w-8 h-8 rounded-xl object-cover shadow-md shadow-indigo-500/20 ring-1 ring-slate-200 dark:ring-slate-700 flex-shrink-0"
+          />
           <div className="text-left">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               {t.appName}

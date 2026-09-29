@@ -120,7 +120,7 @@ function getFirstZodError(error) {
 
 async function runTests() {
   console.log('========================================================');
-  console.log('GOV SAATHI AUTHENTICATION VALIDATION TEST SUITE');
+  console.log('SPEND WISE AI AUTHENTICATION VALIDATION TEST SUITE');
   console.log('========================================================\n');
 
   let passed = 0;

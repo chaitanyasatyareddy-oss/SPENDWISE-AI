@@ -287,7 +287,7 @@ export const LoginScreen: React.FC = () => {
         message: result.error || 'Incorrect email or password. Please verify your credentials and try again.',
       });
     } else {
-      setToast({ type: 'success', message: 'Signed in successfully! Welcome to SpendWise.' });
+      setToast({ type: 'success', message: 'Signed in successfully! Welcome to Spend Wise AI.' });
     }
   };
 
@@ -385,7 +385,7 @@ export const LoginScreen: React.FC = () => {
 
     setToast({
       type: 'success',
-      message: 'Mobile number verified successfully! Welcome to SpendWise.',
+      message: 'Mobile number verified successfully! Welcome to Spend Wise AI.',
     });
   };
 
@@ -495,7 +495,7 @@ export const LoginScreen: React.FC = () => {
       setGoogleStep('choose');
       setSelectedGoogleAccount(null);
       setGooglePassword('');
-      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to SpendWise.' });
+      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to Spend Wise AI.' });
     }
   };
 
@@ -514,7 +514,7 @@ export const LoginScreen: React.FC = () => {
     const result = await login('9063534530', 'Password@123', true);
     setIsLoading(false);
     if (result.success) {
-      setToast({ type: 'success', message: 'Welcome to SpendWise Demo!' });
+      setToast({ type: 'success', message: 'Welcome to Spend Wise AI Demo!' });
     } else {
       setToast({ type: 'error', message: result.error || 'Demo login failed.' });
     }
@@ -566,7 +566,7 @@ export const LoginScreen: React.FC = () => {
         <div className="inline-flex relative items-center justify-center">
           <img
             src="/logo.jpg"
-            alt="SpendWise Logo"
+            alt="Spend Wise AI Logo"
             className="w-16 h-16 rounded-2xl object-cover shadow-xl shadow-indigo-500/25 ring-4 ring-indigo-500/10"
           />
           <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5">
@@ -577,7 +577,7 @@ export const LoginScreen: React.FC = () => {
 
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            SpendWise
+            Spend Wise AI
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-400 max-w-sm mx-auto mt-1 font-medium">
             Track • Analyze • Save Your Money
@@ -983,7 +983,7 @@ export const LoginScreen: React.FC = () => {
           <form onSubmit={handleSignUpSubmit} className="space-y-3.5 animate-in fade-in">
             <div className="space-y-0.5">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>Create your SpendWise Account</span>
+                <span>Create your Spend Wise AI Account</span>
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Register with your full name, email, Indian mobile number, and password.
@@ -1287,7 +1287,7 @@ export const LoginScreen: React.FC = () => {
             className="w-full bg-indigo-50/80 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
           >
             <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>Quick Demo Access (SpendWise)</span>
+            <span>Quick Demo Access (Spend Wise AI)</span>
           </button>
         </div>
       </div>
@@ -1405,7 +1405,7 @@ export const LoginScreen: React.FC = () => {
             {googleStep === 'choose' && (
               <div className="space-y-3.5 animate-in fade-in">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Choose a Google account to continue to <strong>SpendWise</strong>:
+                  Choose a Google account to continue to <strong>Spend Wise AI</strong>:
                 </p>
 
                 <div className="space-y-2">
