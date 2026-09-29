@@ -3,6 +3,7 @@ import { UserProfile, RememberedCustomer } from '../types';
 import { LocalDB, supabase } from '../services/supabaseClient';
 
 import { normalizeIndianPhone, generateNumericOtp } from '../utils/phoneUtils';
+import { dispatchSmsToMobile } from '../services/smsService';
 
 export interface GoogleAuthProfile {
   name: string;
@@ -377,13 +378,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setActiveOtpSession(session);
 
-    // Optional Supabase phone OTP dispatch if cloud credentials present
-    try {
-      const rawE164 = `+91${validation.raw10}`;
-      await supabase.auth.signInWithOtp({ phone: rawE164 });
-    } catch {
-      // Graceful local development fallback
-    }
+    // Dispatch SMS to mobile messages
+    await dispatchSmsToMobile(validation.raw10, generatedOtp);
 
     return {
       success: true,

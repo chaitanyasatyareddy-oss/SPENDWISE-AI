@@ -88,7 +88,8 @@ assert(loginCode.includes('Phone OTP (+91)'), 'Indian Mobile OTP tab option is p
 assert(loginCode.includes('🇮🇳'), 'Indian Flag badge is displayed');
 assert(loginCode.includes('+91'), 'India +91 country code prefix is displayed');
 assert(loginCode.includes('otpDigits.map'), '6 individual digit OTP input boxes are rendered');
-assert(loginCode.includes('Auto-Fill'), '1-Click Auto-Fill OTP convenience chip is present');
+assert(loginCode.includes('SMS Sent to Mobile Messages'), 'Real SMS Sent notification is displayed instead of revealing OTP on screen');
+assert(!loginCode.includes('Your verification OTP is'), 'On-screen OTP code is strictly hidden to enforce checking phone messages');
 assert(loginCode.includes('handleResendOtp'), 'Resend OTP functionality with countdown timer present');
 
 assert(authContextCode.includes('loginWithGoogle'), 'AuthContext provides loginWithGoogle');
