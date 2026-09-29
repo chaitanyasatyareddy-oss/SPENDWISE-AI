@@ -161,20 +161,14 @@ export const LocalDB = {
   getRememberedCustomer(): RememberedCustomer | null {
     const raw = localStorage.getItem(STORAGE_KEYS.REMEMBERED_CUSTOMER);
     if (!raw) {
-      // Default to demo user remembered customer for first-time convenience
-      const defaultRemembered: RememberedCustomer = {
-        identifier: initialUserProfile.username || 'chithanya',
-        fullName: initialUserProfile.fullName,
-        username: initialUserProfile.username,
-        phoneNumber: initialUserProfile.phoneNumber,
-        email: initialUserProfile.email,
-        rememberMe: true,
-        lastLoginAt: new Date().toISOString(),
-      };
-      return defaultRemembered;
+      return null;
     }
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (parsed && (parsed.identifier?.toLowerCase().includes('chithanya') || parsed.fullName?.toLowerCase().includes('chithanya'))) {
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
