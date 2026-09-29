@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { LocalDB } from '../../services/supabaseClient';
 import {
   nameSchema,
   emailSchema,
@@ -456,24 +457,13 @@ export const LoginScreen: React.FC = () => {
     }
   };
 
-  // Google Sign-In: triggers official Google account selector on this device
-  const handleGoogleSignIn = async () => {
-    setIsGoogleLoading(true);
+  // Google Sign-In: triggers account selector for accounts present on this device
+  const handleGoogleSignIn = () => {
     setToast(null);
-    const result = await loginWithGoogle();
-    setIsGoogleLoading(false);
-
-    if (result.success) {
-      setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to Spend Wise AI.' });
-      return;
-    }
-
-    // Supabase OAuth returned DEVICE_GOOGLE_PROMPT or unconfigured:
-    // Seamlessly open the Device Google Account selector modal!
     const defaultEmail = (rememberedCustomer?.email && !rememberedCustomer.email.includes('chithanya'))
       ? rememberedCustomer.email
-      : signInEmail || '';
-    const defaultName = rememberedCustomer?.fullName || (defaultEmail ? defaultEmail.split('@')[0] : '');
+      : (signInEmail || signUpEmail || '');
+    const defaultName = rememberedCustomer?.fullName || signUpFullName || (defaultEmail ? defaultEmail.split('@')[0] : '');
     setGoogleDeviceEmail(defaultEmail);
     setGoogleDeviceName(defaultName);
     setShowGoogleModal(true);
@@ -495,6 +485,11 @@ export const LoginScreen: React.FC = () => {
       setToast({ type: 'success', message: 'Signed in with Google successfully! Welcome to Spend Wise AI.' });
     }
   };
+
+  // Accounts present on this device
+  const registeredDeviceUsers = LocalDB.getRegisteredUsers()
+    .filter(u => u.email && !u.email.toLowerCase().includes('chithanya') && !u.email.endsWith('@spendwise.ai'))
+    .slice(0, 3);
 
   const nameError = getNameError();
   const emailError = getEmailError();
@@ -1331,44 +1326,70 @@ export const LoginScreen: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Select or confirm your Google Account on this device to continue to Spend Wise AI.
+              Choose an account present on this device to sign in or sign up to Spend Wise AI.
             </p>
 
-            {/* Quick-Select Device Account Chip if remembered or entered */}
-            {googleDeviceEmail && (
-              <button
-                type="button"
-                onClick={() => handleConfirmGoogleDeviceLogin(googleDeviceEmail, googleDeviceName)}
-                className="w-full flex items-center justify-between p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 transition-all text-left group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-md">
-                    {(googleDeviceName || googleDeviceEmail).charAt(0).toUpperCase()}
-                  </div>
-                  <div className="overflow-hidden">
-                    <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                      {googleDeviceName || googleDeviceEmail.split('@')[0]}
+            {/* List of Accounts Present On This Device */}
+            <div className="space-y-2">
+              {registeredDeviceUsers.length > 0 ? (
+                registeredDeviceUsers.map((acc, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleConfirmGoogleDeviceLogin(acc.email, acc.fullName || acc.username)}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all text-left group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-md">
+                        {(acc.fullName || acc.email).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="overflow-hidden">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {acc.fullName || acc.email.split('@')[0]}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {acc.email}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                      {googleDeviceEmail}
+                    <ArrowRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                  </button>
+                ))
+              ) : googleDeviceEmail ? (
+                <button
+                  type="button"
+                  onClick={() => handleConfirmGoogleDeviceLogin(googleDeviceEmail, googleDeviceName)}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-600 transition-all text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold flex items-center justify-center text-xs shadow-md">
+                      {(googleDeviceName || googleDeviceEmail).charAt(0).toUpperCase()}
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {googleDeviceName || googleDeviceEmail.split('@')[0]}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        {googleDeviceEmail}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
-              </button>
-            )}
+                  <ArrowRight className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                </button>
+              ) : null}
+            </div>
 
-            {/* Or custom Google account on this device */}
+            {/* Or enter another Google account on this device */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleConfirmGoogleDeviceLogin(googleDeviceEmail, googleDeviceName);
               }}
-              className="space-y-3 pt-1"
+              className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800"
             >
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                  Google Account on this device:
+                  Or use another Google Account on this device:
                 </label>
                 <div className="relative flex items-center">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />

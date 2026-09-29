@@ -74,6 +74,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Sync Supabase Auth state listener
   useEffect(() => {
+    // Clear any leftover OAuth error params from browser URL
+    if (typeof window !== 'undefined' && (window.location.hash.includes('error') || window.location.search.includes('error'))) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         // Fetch or create profile in public.users
@@ -749,27 +754,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     }
 
-    // Try Supabase OAuth
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'select_account',
-          },
-        },
-      });
-
-      if (!error) {
-        return { success: true };
-      }
-    } catch {
-      // Fallback
-    }
-
-    // Trigger device Google account selector
+    // If profile is not yet selected, signal caller to prompt for device Google account
     return {
       success: false,
       error: 'DEVICE_GOOGLE_PROMPT',
